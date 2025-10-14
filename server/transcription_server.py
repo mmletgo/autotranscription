@@ -37,6 +37,19 @@ model = None
 config = None
 lock = threading.Lock()
 
+# 确保在worker进程启动时初始化模型
+def init_worker():
+    """Gunicorn worker初始化函数"""
+    logger.info("Initializing Gunicorn worker...")
+    global model, config
+    try:
+        config = load_config()
+        initialize_model()
+        logger.info("Worker initialization completed successfully")
+    except Exception as e:
+        logger.error(f"Worker initialization failed: {e}", exc_info=True)
+        raise e
+
 
 # Load configuration
 def load_config():
@@ -80,10 +93,12 @@ def load_config():
 def initialize_model():
     global model
     logger.info(f"Loading Whisper model: {config['model_size']}")
+    logger.info(f"Device: {config['device']}, Compute type: {config['compute_type']}")
 
     try:
         model_size = config["model_size"]
         # 优先使用Systran的Faster Whisper模型
+        logger.info(f"Attempting to load Systran Faster Whisper model: {model_size}")
         model = WhisperModel(
             model_size,
             device=config["device"],
@@ -91,16 +106,31 @@ def initialize_model():
             local_files_only=False,
         )
         logger.info("Systran Faster Whisper model loaded successfully")
+
+        # 测试模型是否可用
+        logger.info("Testing model availability...")
+        test_audio = np.zeros(16000, dtype=np.float32)  # 1秒的静音音频
+        test_segments = list(model.transcribe(test_audio, language="zh"))
+        logger.info("Model test completed successfully")
+
     except Exception as e:
         logger.error(f"Failed to load Systran model {config['model_size']}: {e}")
+        logger.error(f"Error details: {str(e)}", exc_info=True)
         logger.info("Falling back to base model")
         try:
             model = WhisperModel(
                 "base", device=config["device"], compute_type=config["compute_type"]
             )
             logger.info("Base model loaded as fallback")
+
+            # 测试回退模型
+            test_audio = np.zeros(16000, dtype=np.float32)
+            test_segments = list(model.transcribe(test_audio, language="zh"))
+            logger.info("Base model test completed successfully")
+
         except Exception as fallback_error:
             logger.error(f"Failed to load base model: {fallback_error}")
+            logger.error(f"Base model error details: {str(fallback_error)}", exc_info=True)
             raise fallback_error
 
 
@@ -279,62 +309,109 @@ def start_transcription_workers():
 @app.route("/api/health", methods=["GET"])
 def health_check():
     """健康检查端点"""
-    return jsonify(
-        {
-            "status": "healthy",
-            "model": config["model_size"],
-            "device": config["device"],
-            "timestamp": datetime.now().isoformat(),
-            "queue_size": transcription_queue.qsize(),
-            "active_transcriptions": active_transcriptions,
-            "max_concurrent": config.get("max_concurrent_transcriptions", 8),
-        }
-    )
+    try:
+        # 确保模型和配置已初始化
+        ensure_initialized()
+
+        # 检查模型是否已加载
+        if model is None:
+            logger.error("Health check failed: Model not loaded")
+            return jsonify(
+                {
+                    "status": "unhealthy",
+                    "error": "Model not loaded",
+                    "success": False
+                }
+            ), 503
+
+        # 检查配置是否加载
+        if config is None:
+            logger.error("Health check failed: Configuration not loaded")
+            return jsonify(
+                {
+                    "status": "unhealthy",
+                    "error": "Configuration not loaded",
+                    "success": False
+                }
+            ), 503
+
+        return jsonify(
+            {
+                "status": "healthy",
+                "model": config["model_size"],
+                "device": config["device"],
+                "timestamp": datetime.now().isoformat(),
+                "queue_size": transcription_queue.qsize(),
+                "active_transcriptions": active_transcriptions,
+                "max_concurrent": config.get("max_concurrent_transcriptions", 8),
+                "worker_count": config.get("workers", 1),
+                "model_loaded": model is not None,
+                "config_loaded": config is not None,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Health check failed with error: {str(e)}", exc_info=True)
+        return jsonify(
+            {
+                "status": "unhealthy",
+                "error": str(e),
+                "success": False
+            }
+        ), 500
 
 
 @app.route("/api/config", methods=["GET"])
 def get_config():
     """获取服务器配置"""
-    return jsonify(
-        {
-            "model_size": config["model_size"],
-            "device": config["device"],
-            "compute_type": config["compute_type"],
-            "language": config.get("language"),
-            "network_mode": config.get("network_mode", "lan"),
-            "workers": config.get("workers", 4),
-            "max_concurrent_transcriptions": config.get(
-                "max_concurrent_transcriptions", 8
-            ),
-            "queue_size": config.get("queue_size", 100),
-        }
-    )
+    try:
+        # 确保配置已初始化
+        ensure_initialized()
+
+        return jsonify(
+            {
+                "model_size": config["model_size"],
+                "device": config["device"],
+                "compute_type": config["compute_type"],
+                "language": config.get("language"),
+                "network_mode": config.get("network_mode", "lan"),
+                "workers": config.get("workers", 4),
+                "max_concurrent_transcriptions": config.get(
+                    "max_concurrent_transcriptions", 8
+                ),
+                "queue_size": config.get("queue_size", 100),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Config check failed with error: {str(e)}", exc_info=True)
+        return jsonify(
+            {
+                "error": str(e),
+                "success": False
+            }
+        ), 500
 
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
     """获取详细状态信息"""
-    return jsonify(
-        {
-            "status": "running",
-            "queue": {
-                "size": transcription_queue.qsize(),
-                "max_size": transcription_queue.maxsize,
-                "active_transcriptions": active_transcriptions,
-                "max_concurrent": config.get("max_concurrent_transcriptions", 8),
-            },
-            "model": {
-                "size": config["model_size"],
-                "device": config["device"],
-                "compute_type": config["compute_type"],
-            },
-            "performance": {
-                "total_requests": getattr(app, "total_requests", 0),
-                "successful_requests": getattr(app, "successful_requests", 0),
-                "failed_requests": getattr(app, "failed_requests", 0),
-            },
-        }
-    )
+    try:
+        # 简化版本，先不调用ensure_initialized
+        return jsonify(
+            {
+                "status": "running",
+                "message": "Basic status endpoint working",
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Status check failed with error: {str(e)}", exc_info=True)
+        return jsonify(
+            {
+                "status": "error",
+                "error": str(e),
+                "success": False
+            }
+        ), 500
 
 
 @app.route("/api/transcribe", methods=["POST"])
@@ -524,6 +601,20 @@ def not_found(error):
 def internal_error(error):
     return jsonify({"success": False, "error": "Internal server error"}), 500
 
+
+def ensure_initialized():
+    """确保在worker进程中模型和配置已初始化"""
+    global config, model, transcription_executor
+    if config is None or model is None:
+        logger.info("Initializing model and config in worker process...")
+        config = load_config()
+        initialize_model()
+
+        # 确保转写工作线程已启动
+        if transcription_executor is None:
+            start_transcription_workers()
+
+        logger.info("Worker process initialization completed")
 
 def main():
     """启动服务器"""

@@ -284,7 +284,6 @@ exec gunicorn \\
     --timeout "$TIMEOUT" \\
     --max-requests 1000 \\
     --max-requests-jitter 100 \\
-    --preload \\
     --access-logfile "$LOG_FILE" \\
     --error-logfile "$ERROR_LOG_FILE" \\
     --log-level "$LOG_LEVEL" \\
