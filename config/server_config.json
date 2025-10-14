@@ -1,7 +1,7 @@
 {
   "model_size": "large-v3",
   "device": "cuda",
-  "compute_type": "int8",
+  "compute_type": "float16",
   "language": "zh",
   "initial_prompt": "以下是普通话的句子。",
   "host": "0.0.0.0",
