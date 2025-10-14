@@ -329,6 +329,16 @@ install_miniconda() {
     if command -v conda &> /dev/null; then
         CONDA_VERSION=$(conda --version 2>/dev/null | cut -d' ' -f2)
         log_success "Conda已安装，版本: $CONDA_VERSION"
+
+        # 检查是否已安装mamba
+        if command -v mamba &> /dev/null; then
+            MAMBA_VERSION=$(mamba --version 2>/dev/null | cut -d' ' -f2)
+            log_success "Mamba已安装，版本: $MAMBA_VERSION"
+            USE_MAMBA=true
+        else
+            log_info "Mamba未安装，将在conda环境创建后安装"
+            USE_MAMBA=false
+        fi
         return 0
     fi
 
@@ -374,6 +384,7 @@ install_miniconda() {
     # 验证安装
     if command -v conda &> /dev/null; then
         log_success "Miniconda安装成功"
+        USE_MAMBA=false
         return 0
     else
         log_error "Miniconda安装失败"
@@ -415,150 +426,291 @@ create_conda_env() {
     log_info "激活Conda环境..."
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda activate "$env_name"
-
-    # 升级conda和pip
-    conda update -n base -c defaults conda -y
-    pip install --upgrade pip setuptools wheel
+    # 安装Mamba
+    install_mamba
+    # # 升级conda和pip
+    # conda update -n base -c defaults conda -y
+    # pip install --upgrade pip setuptools wheel
 
     log_success "Conda环境创建完成"
 }
 
-# 安装Python依赖（完全使用conda）
-install_python_deps() {
-    log_info "安装Python依赖（使用conda）..."
+# 安装Mamba (如果可用)
+install_mamba() {
+    log_info "检查并安装Mamba以加速conda包管理..."
 
     # 激活conda环境
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda activate autotranscription
 
-    # 设置conda channels优先级
-    conda config --add channels defaults
-    conda config --add channels conda-forge
-    conda config --set channel_priority strict
-
-    log_info "更新conda基础包..."
-    conda update -n base -c defaults conda -y
-
-    # 安装基础科学计算包
-    log_info "安装基础科学计算包..."
-    conda install -y \
-        numpy \
-        scipy \
-        requests \
-        setuptools \
-        wheel
-
-    # 根据CUDA可用性安装PyTorch
-    if [[ "$CUDA_AVAILABLE" == true ]]; then
-        log_info "安装CUDA版本的PyTorch（pip）..."
-        # 使用pip安装PyTorch，避免conda依赖冲突
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 || {
-            log_warning "PyTorch CUDA版本安装失败，尝试使用CPU版本..."
-            pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        }
-    else
-        log_info "安装CPU版本的PyTorch（pip）..."
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    # 检查mamba是否已在环境中可用
+    if command -v mamba &> /dev/null; then
+        MAMBA_VERSION=$(mamba --version 2>/dev/null | cut -d' ' -f2)
+        log_success "Mamba已在环境中可用，版本: $MAMBA_VERSION"
+        USE_MAMBA=true
+        return 0
     fi
 
-    # 安装Web服务依赖
-    log_info "安装Web服务依赖..."
-    conda install -y \
-        flask \
-        gunicorn \
-        gevent \
-        flask-cors
+    log_info "在conda环境中安装Mamba..."
+    # 安装mamba到base环境
+    conda install -n base -c conda-forge mamba -y
 
-    # 安装音频处理相关包
-    log_info "安装音频处理依赖..."
+    # 重新初始化以确保mamba可用
+    conda init bash
+
+    # 再次检查mamba是否可用
+    if command -v mamba &> /dev/null; then
+        MAMBA_VERSION=$(mamba --version 2>/dev/null | cut -d' ' -f2)
+        log_success "Mamba安装成功，版本: $MAMBA_VERSION"
+        USE_MAMBA=true
+        log_info "Mamba将显著加速包解析和安装过程"
+    else
+        log_warning "Mamba安装失败，将使用conda进行包管理"
+        USE_MAMBA=false
+    fi
+}
+
+# 安装完整系统依赖
+install_python_deps() {
+    log_info "安装完整系统依赖（使用pip + conda系统包）..."
+
+    # 激活conda环境
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate autotranscription
+
+    # 升级pip到最新版本
+    log_info "升级pip..."
+    pip install --upgrade pip setuptools wheel
+
+    # 首先安装系统级依赖（通过conda）
+    log_info "安装系统级依赖..."
     conda install -y \
         ffmpeg \
         libsndfile \
         portaudio \
-        soundfile
-
-    # 安装系统工具包
-    log_info "安装系统工具包..."
-    conda install -y \
         pkg-config \
         curl \
         wget \
-        git
+        git || {
+        log_warning "部分系统依赖安装失败，继续..."
+    }
 
-    # 安装GUI和系统交互包
-    log_info "安装GUI和系统交互包..."
-    conda install -y \
-        pyqt \
-        pyside2 \
-        tk
+    # 安装基础科学计算包（优先conda，失败则pip）
+    log_info "安装基础科学计算包..."
+    conda install -y numpy scipy requests || {
+        log_warning "conda安装部分包失败，使用pip..."
+        pip install numpy scipy requests
+    }
 
-    # 尝试用conda安装更多Python包，如果conda没有则用pip
-    log_info "安装Python应用包..."
+    # 安装Web服务依赖
+    log_info "安装Web服务依赖..."
+    pip install flask gunicorn gevent flask-cors
+
+    # 根据CUDA可用性安装PyTorch
+    if [[ "$CUDA_AVAILABLE" == true ]]; then
+        log_info "安装CUDA版本的PyTorch..."
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 || {
+            log_warning "PyTorch CUDA版本安装失败，尝试CPU版本..."
+            pip install torch torchvision torchaudio
+        }
+    else
+        log_info "安装CPU版本的PyTorch..."
+        pip install torch torchvision torchaudio
+    fi
+
+    # 安装核心应用包（使用pip确保兼容性）
+    log_info "安装核心应用包..."
 
     # 服务端依赖
-    log_info "安装服务端依赖..."
-    conda install -y faster-whisper || {
-        log_warning "conda无法安装faster-whisper，使用pip安装..."
-        pip install faster-whisper
-    }
+    pip install faster-whisper psutil
 
-    conda install -y psutil || {
-        log_warning "conda无法安装psutil，使用pip安装..."
-        pip install psutil
-    }
-
-    # 客户端依赖 - 尝试conda安装
-    log_info "安装客户端依赖..."
-
-    # 尝试安装PyAudio
-    conda install -y pyaudio || {
-        log_warning "conda无法安装pyaudio，使用pip安装..."
-        pip install pyaudio
-    }
-
-    # 尝试安装pynput
-    conda install -y pynput || {
-        log_warning "conda无法安装pynput，使用pip安装..."
-        pip install pynput
-    }
-
-    # 尝试安装其他客户端包
-    conda install -y transitions || {
-        log_warning "conda无法安装transitions，使用pip安装..."
-        pip install transitions
-    }
-
-    conda install -y pyperclip || {
-        log_warning "conda无法安装pyperclip，使用pip安装..."
-        pip install pyperclip
-    }
-
-    conda install -y sounddevice || {
-        log_warning "conda无法安装sounddevice，使用pip安装..."
-        pip install sounddevice
-    }
+    # 客户端依赖
+    pip install soundfile pyaudio pynput transitions pyperclip sounddevice
 
     # 中文处理
-    conda install -y opencc || {
-        log_warning "conda无法安装opencc，使用pip安装..."
-        pip install opencc-python-reimplemented
+    pip install opencc-python-reimplemented
+
+    # 可选GUI包（如果conda失败则跳过）
+    log_info "尝试安装可选GUI包..."
+    conda install -y pyqt pyside2 tk || {
+        log_warning "GUI包安装失败，跳过（不影响核心功能）"
     }
 
     # 清理conda缓存
     log_info "清理conda缓存..."
     conda clean -a -y
 
-    # 升级pip（如果需要使用pip的话）
-    if command -v pip &> /dev/null; then
-        pip install --upgrade pip setuptools wheel --quiet
-    fi
-
-    log_success "Python依赖安装完成"
+    log_success "完整系统依赖安装完成"
+    log_info "安装策略: conda系统包 + pip Python包 = 最佳兼容性"
 }
 
-# 创建配置文件
+# 仅安装客户端依赖
+install_client_deps() {
+    log_info "安装客户端依赖（轻量化安装）..."
+
+    # 激活conda环境
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate autotranscription
+
+    # 升级pip到最新版本
+    log_info "升级pip..."
+    pip install --upgrade pip setuptools wheel
+
+    # 安装系统级依赖（通过conda）
+    log_info "安装音频处理系统依赖..."
+    conda install -y \
+        ffmpeg \
+        libsndfile \
+        portaudio \
+        pkg-config \
+        curl \
+        wget \
+        git || {
+        log_warning "部分系统依赖安装失败，继续..."
+    }
+
+    # 安装基础科学计算包
+    log_info "安装基础依赖..."
+    conda install -y numpy scipy requests || {
+        log_warning "conda安装部分包失败，使用pip..."
+        pip install numpy scipy requests
+    }
+
+    # 安装客户端核心依赖
+    log_info "安装客户端核心依赖..."
+    pip install soundfile pyaudio pynput transitions pyperclip sounddevice
+    pip install opencc-python-reimplemented
+
+    # 可选GUI包
+    log_info "尝试安装可选GUI包..."
+    conda install -y pyqt pyside2 tk || {
+        log_warning "GUI包安装失败，跳过（不影响核心功能）"
+    }
+
+    # 清理conda缓存
+    log_info "清理conda缓存..."
+    conda clean -a -y
+
+    log_success "客户端依赖安装完成"
+    log_info "安装策略: 仅安装客户端运行所需依赖"
+}
+
+# 仅安装服务端依赖
+install_server_deps() {
+    log_info "安装服务端依赖（AI转写服务）..."
+
+    # 激活conda环境
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate autotranscription
+
+    # 升级pip到最新版本
+    log_info "升级pip..."
+    pip install --upgrade pip setuptools wheel
+
+    # 根据CUDA可用性安装PyTorch
+    if [[ "$CUDA_AVAILABLE" == true ]]; then
+        log_info "安装CUDA版本的PyTorch..."
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 || {
+            log_warning "PyTorch CUDA版本安装失败，尝试CPU版本..."
+            pip install torch torchvision torchaudio
+        }
+    else
+        log_info "安装CPU版本的PyTorch..."
+        pip install torch torchvision torchaudio
+    fi
+
+    # 安装Web服务依赖
+    log_info "安装Web服务依赖..."
+    pip install flask gunicorn gevent flask-cors
+
+    # 安装服务端核心依赖
+    log_info "安装服务端核心依赖..."
+    pip install faster-whisper psutil
+
+    # 清理conda缓存
+    log_info "清理conda缓存..."
+    conda clean -a -y
+
+    log_success "服务端依赖安装完成"
+    log_info "安装策略: 仅安装服务端运行所需依赖"
+}
+
+# 创建完整配置文件
 create_config() {
-    log_info "创建配置文件..."
+    log_info "创建完整配置文件..."
+    create_server_config
+    create_client_config
+}
+
+# 仅创建服务端配置文件
+create_server_config() {
+    log_info "创建服务端配置文件..."
+
+    # 确保config目录存在
+    mkdir -p config
+
+    # 创建服务器配置文件
+    if [[ ! -f "config/server_config.json" ]]; then
+        # 根据GPU可用性设置设备
+        if [[ "$CUDA_AVAILABLE" == true ]]; then
+            DEVICE="cuda"
+            COMPUTE_TYPE="float16"
+        else
+            DEVICE="cpu"
+            COMPUTE_TYPE="int8"
+        fi
+
+        cat > config/server_config.json << EOF
+{
+    "model_size": "large-v3",
+    "device": "$DEVICE",
+    "compute_type": "$COMPUTE_TYPE",
+    "language": "zh",
+    "initial_prompt": "以下是普通话的句子。",
+    "network_mode": "lan",
+    "host": "0.0.0.0",
+    "port": 5000,
+    "workers": 8,
+    "max_concurrent_transcriptions": 16,
+    "queue_size": 100,
+    "timeout": 600,
+    "log_level": "INFO"
+}
+EOF
+        log_success "服务端配置文件创建完成"
+    else
+        log_info "服务端配置文件已存在，跳过创建"
+    fi
+}
+
+# 仅创建客户端配置文件
+create_client_config() {
+    log_info "创建客户端配置文件..."
+
+    # 确保config目录存在
+    mkdir -p config
+
+    # 创建客户端配置文件
+    if [[ ! -f "config/client_config.json" ]]; then
+        cat > config/client_config.json << EOF
+{
+    "server_url": "http://localhost:5000",
+    "max_time": 30,
+    "zh_convert": "none",
+    "streaming": true,
+    "key_combo": "<alt>",
+    "sample_rate": 16000,
+    "channels": 1
+}
+EOF
+        log_success "客户端配置文件创建完成"
+    else
+        log_info "客户端配置文件已存在，跳过创建"
+    fi
+}
+
+# 原始的创建配置文件函数（保持向后兼容）
+create_config_original() {
 
     # 确保config目录存在
     mkdir -p config
@@ -637,19 +789,22 @@ create_log_dir() {
 
 # 验证安装
 verify_installation() {
+    local install_mode="${1:-full}"
+
     log_info "验证安装..."
 
     # 激活conda环境
-    source "$(conda info --base)/etc/profile.d/conda.sh"
+    source "$(conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || source "$HOME/miniconda3/etc/profile.d/conda.sh" 2>/dev/null || source "$HOME/anaconda3/etc/profile.d/conda.sh" 2>/dev/null
     conda activate autotranscription
 
     # 显示环境信息
     log_info "Python版本: $(python --version)"
     log_info "Conda环境: $CONDA_DEFAULT_ENV"
 
-    # 检查CUDA支持
-    if [[ "$CUDA_AVAILABLE" == true ]]; then
-        python3 -c "
+    # 检查CUDA支持（仅在完整或服务端模式下）
+    if [[ "$install_mode" == "full" ]] || [[ "$install_mode" == "server" ]]; then
+        if [[ "$CUDA_AVAILABLE" == true ]]; then
+            python3 -c "
 import torch
 print(f'PyTorch版本: {torch.__version__}')
 print(f'CUDA可用: {torch.cuda.is_available()}')
@@ -658,22 +813,39 @@ if torch.cuda.is_available():
     print(f'CUDA当前设备: {torch.cuda.current_device()}')
     print(f'CUDA设备名称: {torch.cuda.get_device_name()}')
 "
+        fi
     fi
 
     # 显示conda环境信息
     log_info "Conda环境包列表:"
     conda list | head -20
 
+    # 根据安装模式选择要验证的模块
+    case "$install_mode" in
+        "full")
+            modules_list=("flask" "flask_cors" "faster_whisper" "numpy" "gunicorn" "gevent" "torch" "soundfile" "psutil" "pyaudio" "pynput" "transitions" "pyperclip" "sounddevice")
+            ;;
+        "client")
+            modules_list=("numpy" "soundfile" "pyaudio" "pynput" "transitions" "pyperclip" "sounddevice" "requests")
+            ;;
+        "server")
+            modules_list=("flask" "flask_cors" "faster_whisper" "numpy" "gunicorn" "gevent" "torch" "psutil")
+            ;;
+    esac
+
     # 检查关键模块是否可以导入
+    # 将bash数组转换为Python列表字符串
+    python_modules=$(printf "'%s'," "${modules_list[@]}" | sed 's/,$//')
+
     python3 -c "
 import sys
-import pkg_resources
+try:
+    from importlib.metadata import distributions
+except ImportError:
+    # 兼容旧版本Python
+    from pkg_resources import distributions
 
-modules = [
-    'flask', 'flask_cors', 'faster_whisper', 'numpy',
-    'gunicorn', 'gevent', 'torch', 'soundfile', 'psutil',
-    'pyaudio', 'pynput', 'transitions', 'pyperclip', 'sounddevice'
-]
+modules = [${python_modules}]
 
 failed = []
 success = []
@@ -688,10 +860,17 @@ for module in modules:
 
         # 检查包的安装来源
         try:
-            dist = pkg_resources.get_distribution(module)
-            if hasattr(dist, '_provider') and 'conda' in str(dist._provider).lower():
-                conda_packages.append(module)
-            else:
+            dist_found = False
+            for dist in distributions():
+                if dist.name.replace('-', '_').lower() == module.lower():
+                    dist_found = True
+                    # 检查是否为conda安装
+                    if hasattr(dist, '_provider') and 'conda' in str(dist._provider).lower():
+                        conda_packages.append(module)
+                    else:
+                        pip_packages.append(module)
+                    break
+            if not dist_found:
                 pip_packages.append(module)
         except:
             pip_packages.append(module)
@@ -701,7 +880,7 @@ for module in modules:
         print(f'✗ {module}: {e}')
         failed.append(module)
 
-print(f'\\n=== 安装总结 ===')
+print(f'\\n=== 安装总结 (${install_mode}模式) ===')
 print(f'成功导入: {len(success)}/{len(modules)} 个模块')
 print(f'Conda安装: {len(conda_packages)} 个')
 print(f'Pip安装: {len(pip_packages)} 个')
@@ -721,9 +900,11 @@ else:
     if [[ $? -eq 0 ]]; then
         log_success "安装验证成功!"
 
-        # 测试faster-whisper
-        log_info "测试faster-whisper功能..."
-        python3 -c "
+        # 测试特定功能（仅在完整或服务端模式下测试faster-whisper）
+        if [[ "$install_mode" == "full" ]] || [[ "$install_mode" == "server" ]]; then
+            # 测试faster-whisper
+            log_info "测试faster-whisper功能..."
+            python3 -c "
 try:
     from faster_whisper import WhisperModel
     print('✓ faster-whisper导入成功')
@@ -740,12 +921,39 @@ except Exception as e:
     print(f'✗ faster-whisper测试失败: {e}')
     exit(1)
 "
-        if [[ $? -eq 0 ]]; then
-            log_success "faster-whisper功能验证通过!"
-        else
-            log_error "faster-whisper功能验证失败!"
-            exit 1
+            if [[ $? -eq 0 ]]; then
+                log_success "faster-whisper功能验证通过!"
+            else
+                log_error "faster-whisper功能验证失败!"
+                exit 1
+            fi
         fi
+
+        # 测试特定功能（仅在完整或客户端模式下测试音频模块）
+        if [[ "$install_mode" == "full" ]] || [[ "$install_mode" == "client" ]]; then
+            # 测试音频模块
+            log_info "测试音频处理模块..."
+            python3 -c "
+try:
+    import soundfile as sf
+    import sounddevice as sd
+    print('✓ 音频处理模块导入成功')
+
+    # 测试基本功能
+    print('✓ soundfile版本:', sf.__version__)
+    print('✓ sounddevice版本:', sd.__version__)
+
+except Exception as e:
+    print(f'✗ 音频处理模块测试失败: {e}')
+    exit(1)
+"
+            if [[ $? -eq 0 ]]; then
+                log_success "音频处理模块验证通过!"
+            else
+                log_warning "音频处理模块验证失败，可能影响录音功能"
+            fi
+        fi
+
     else
         log_error "安装验证失败!"
         exit 1
@@ -754,83 +962,265 @@ except Exception as e:
 
 # 显示安装后信息
 show_post_install_info() {
-    log_success "=== AutoTranscription 安装完成 (基于Conda) ==="
+    local install_mode="$1"
+
+    case "$install_mode" in
+        "full")
+            log_success "=== AutoTranscription 完整系统安装完成 (基于Conda) ==="
+            echo
+            echo "接下来的步骤:"
+            echo "1. 激活Conda环境: conda activate autotranscription"
+            echo "2. 启动高并发服务端: ./scripts/manage.sh server start"
+            echo "3. 启动客户端: ./scripts/manage.sh client"
+            echo "4. 实时监控: ./scripts/manage.sh server monitor"
+            echo
+            echo "环境信息:"
+            echo "- Conda环境: autotranscription (完全隔离)"
+            echo "- Python版本: $(conda run -n autotranscription python --version 2>/dev/null || echo '未知')"
+            echo "- 包管理器: conda (系统库) + pip (Python包)"
+            if [[ "$CUDA_AVAILABLE" == true ]]; then
+                echo "- GPU加速: 已启用 (CUDA $CUDA_VERSION)"
+                echo "- PyTorch: CUDA版本 (pip安装)"
+            else
+                echo "- GPU加速: 未启用 (CPU模式)"
+                echo "- PyTorch: CPU版本 (pip安装)"
+            fi
+            echo
+            echo "高并发配置:"
+            echo "- 最大并发转写: 16个同时请求"
+            echo "- 请求队列容量: 100个"
+            echo "- Gunicorn工作进程: 8个"
+            echo
+            echo "配置文件位置:"
+            echo "- 服务器配置: config/server_config.json (含高并发设置)"
+            echo "- 客户端配置: config/client_config.json"
+            echo
+            echo "日志目录: logs/"
+            echo
+            echo "Conda环境管理:"
+            echo "- 激活环境: conda activate autotranscription"
+            echo "- 退出环境: conda deactivate"
+            echo "- 查看环境: conda env list"
+            echo "- 查看包列表: conda list -n autotranscription"
+            echo "- 更新包: conda update -n autotranscription <package_name>"
+            echo "- 删除环境: conda env remove -n autotranscription -y"
+            echo
+            echo "依赖来源:"
+            echo "- 系统库: conda (ffmpeg, libsndfile, portaudio等)"
+            echo "- Python包: pip (所有核心功能包)"
+            echo "- 安装策略: 混合安装确保最佳兼容性"
+            echo
+            echo "常用管理命令:"
+            echo "- 系统状态: ./scripts/manage.sh status"
+            echo "- 服务健康检查: ./scripts/manage.sh server health"
+            echo "- 查看服务端状态: ./scripts/manage.sh server status"
+            echo
+            echo "如需重新安装，请运行:"
+            echo "conda env remove -n autotranscription -y"
+            echo "./scripts/manage.sh install"
+            echo
+            echo "🚀 高并发语音转写系统已准备就绪!"
+            ;;
+
+        "client")
+            log_success "=== AutoTranscription 客户端安装完成 (基于Conda) ==="
+            echo
+            echo "接下来的步骤:"
+            echo "1. 激活Conda环境: conda activate autotranscription"
+            echo "2. 启动客户端: ./scripts/manage.sh client"
+            echo "3. 检查服务连接: ./scripts/start_client.sh check"
+            echo
+            echo "环境信息:"
+            echo "- Conda环境: autotranscription (客户端)"
+            echo "- Python版本: $(conda run -n autotranscription python --version 2>/dev/null || echo '未知')"
+            echo "- 包管理器: conda (系统库) + pip (Python包)"
+            echo
+            echo "配置文件位置:"
+            echo "- 客户端配置: config/client_config.json"
+            echo
+            echo "日志目录: logs/"
+            echo
+            echo "连接服务端:"
+            echo "1. 确保服务端已启动"
+            echo "2. 修改 config/client_config.json 中的 server_url"
+            echo "3. 运行 ./scripts/manage.sh client"
+            echo
+            echo "客户端服务管理:"
+            echo "- 安装为系统服务: ./scripts/manage.sh service install"
+            echo "- 启用开机自启: ./scripts/manage.sh service enable"
+            echo "- 查看服务状态: ./scripts/manage.sh service status"
+            echo
+            echo "Conda环境管理:"
+            echo "- 激活环境: conda activate autotranscription"
+            echo "- 退出环境: conda deactivate"
+            echo "- 查看环境: conda env list"
+            echo "- 删除环境: conda env remove -n autotranscription -y"
+            echo
+            echo "依赖来源:"
+            echo "- 系统库: conda (ffmpeg, libsndfile, portaudio等)"
+            echo "- Python包: pip (客户端核心功能包)"
+            echo "- 安装策略: 轻量化客户端安装"
+            echo
+            echo "🎤 客户端已准备就绪，可以连接到服务端!"
+            ;;
+
+        "server")
+            log_success "=== AutoTranscription 服务端安装完成 (基于Conda) ==="
+            echo
+            echo "接下来的步骤:"
+            echo "1. 激活Conda环境: conda activate autotranscription"
+            echo "2. 启动服务端: ./scripts/manage.sh server start"
+            echo "3. 健康检查: ./scripts/manage.sh server health"
+            echo "4. 实时监控: ./scripts/manage.sh server monitor"
+            echo
+            echo "环境信息:"
+            echo "- Conda环境: autotranscription (服务端)"
+            echo "- Python版本: $(conda run -n autotranscription python --version 2>/dev/null || echo '未知')"
+            echo "- 包管理器: conda (系统库) + pip (Python包)"
+            if [[ "$CUDA_AVAILABLE" == true ]]; then
+                echo "- GPU加速: 已启用 (CUDA $CUDA_VERSION)"
+                echo "- PyTorch: CUDA版本 (pip安装)"
+            else
+                echo "- GPU加速: 未启用 (CPU模式)"
+                echo "- PyTorch: CPU版本 (pip安装)"
+            fi
+            echo
+            echo "高并发配置:"
+            echo "- 最大并发转写: 16个同时请求"
+            echo "- 请求队列容量: 100个"
+            echo "- Gunicorn工作进程: 8个"
+            echo
+            echo "配置文件位置:"
+            echo "- 服务器配置: config/server_config.json (含高并发设置)"
+            echo
+            echo "日志目录: logs/"
+            echo
+            echo "API接口:"
+            echo "- 健康检查: GET http://localhost:5000/api/health"
+            echo "- 系统状态: GET http://localhost:5000/api/status"
+            echo "- 语音转录: POST http://localhost:5000/api/transcribe"
+            echo
+            echo "常用管理命令:"
+            echo "- 服务端状态: ./scripts/manage.sh server status"
+            echo "- 服务端日志: ./scripts/manage.sh server logs"
+            echo "- 健康检查: ./scripts/manage.sh server health"
+            echo "- 实时监控: ./scripts/manage.sh server monitor"
+            echo
+            echo "Conda环境管理:"
+            echo "- 激活环境: conda activate autotranscription"
+            echo "- 退出环境: conda deactivate"
+            echo "- 查看环境: conda env list"
+            echo "- 删除环境: conda env remove -n autotranscription -y"
+            echo
+            echo "依赖来源:"
+            echo "- 系统库: conda (ffmpeg, libsndfile等)"
+            echo "- Python包: pip (服务端核心功能包)"
+            echo "- 安装策略: 高并发服务端安装"
+            echo
+            echo "🚀 高并发AI转写服务已准备就绪!"
+            ;;
+    esac
+
     echo
-    echo "接下来的步骤:"
-    echo "1. 激活Conda环境: conda activate autotranscription"
-    echo "2. 启动高并发服务端: ./scripts/manage.sh server start"
-    echo "3. 启动客户端: ./scripts/manage.sh client"
-    echo "4. 实时监控: ./scripts/manage.sh server monitor"
+    echo "通用命令:"
+    echo "- 查看系统状态: ./scripts/manage.sh status"
+    echo "- 查看帮助: ./scripts/manage.sh --help"
+    echo "- 完全重置: ./scripts/manage.sh reset"
     echo
-    echo "环境信息:"
-    echo "- Conda环境: autotranscription (完全隔离)"
-    echo "- Python版本: $(conda run -n autotranscription python --version 2>/dev/null || echo '未知')"
-    echo "- 依赖管理: 主要使用conda，部分包使用pip作为备选"
-    if [[ "$CUDA_AVAILABLE" == true ]]; then
-        echo "- GPU加速: 已启用 (CUDA $CUDA_VERSION)"
-        echo "- PyTorch: CUDA版本 (conda安装)"
-    else
-        echo "- GPU加速: 未启用 (CPU模式)"
-        echo "- PyTorch: CPU版本 (conda安装)"
-    fi
-    echo
-    echo "高并发配置:"
-    echo "- 最大并发转写: 16个同时请求"
-    echo "- 请求队列容量: 100个"
-    echo "- Gunicorn工作进程: 8个"
-    echo
-    echo "配置文件位置:"
-    echo "- 服务器配置: config/server_config.json (含高并发设置)"
-    echo "- 客户端配置: config/client_config.json"
-    echo
-    echo "日志目录: logs/"
-    echo
-    echo "Conda环境管理:"
-    echo "- 激活环境: conda activate autotranscription"
-    echo "- 退出环境: conda deactivate"
-    echo "- 查看环境: conda env list"
-    echo "- 查看包列表: conda list -n autotranscription"
-    echo "- 更新包: conda update -n autotranscription <package_name>"
-    echo "- 删除环境: conda env remove -n autotranscription -y"
-    echo
-    echo "依赖来源:"
-    echo "- 大部分依赖: conda (conda-forge, pytorch channels)"
-    echo "- 少数特殊包: pip (仅当conda不可用时)"
-    echo
-    echo "常用管理命令:"
-    echo "- 系统状态: ./scripts/manage.sh status"
-    echo "- 服务健康检查: ./scripts/manage.sh server health"
-    echo "- 查看服务端状态: ./scripts/manage.sh server status"
-    echo
-    echo "如需重新安装，请运行:"
-    echo "conda env remove -n autotranscription -y"
-    echo "./scripts/manage.sh install"
-    echo
-    echo "🚀 高并发语音转写系统已准备就绪!"
+    echo "🎉 安装完成!"
+}
+
+# 显示帮助信息
+show_help() {
+    cat << EOF
+AutoTranscription 依赖安装脚本
+
+用法: $SCRIPT_NAME [模式]
+
+模式:
+    full            安装完整系统依赖 (默认)
+    client          仅安装客户端依赖
+    server          仅安装服务端依赖
+    -h, --help      显示此帮助信息
+
+示例:
+    $SCRIPT_NAME                # 安装完整系统
+    $SCRIPT_NAME full           # 安装完整系统
+    $SCRIPT_NAME client         # 仅安装客户端
+    $SCRIPT_NAME server         # 仅安装服务端
+
+EOF
 }
 
 # 主函数
 main() {
-    log_info "开始安装AutoTranscription依赖..."
+    # 解析命令行参数
+    local install_mode="${1:-full}"
 
-    detect_os
-    check_python
-    check_cuda
-    install_system_deps
+    case "$install_mode" in
+        "full")
+            log_info "开始安装AutoTranscription完整系统依赖..."
+            ;;
+        "client")
+            log_info "开始安装客户端依赖..."
+            ;;
+        "server")
+            log_info "开始安装服务端依赖..."
+            ;;
+        "-h"|"--help"|"help")
+            show_help
+            exit 0
+            ;;
+        *)
+            log_error "未知安装模式: $install_mode"
+            echo
+            show_help
+            exit 1
+            ;;
+    esac
 
-    # 如果需要安装CUDA Toolkit，在conda环境创建前安装
-    if [[ "$NEED_INSTALL_CUDA" == true ]]; then
-        install_cuda_toolkit
+    # 检测系统环境（完整安装需要）
+    if [[ "$install_mode" == "full" ]] || [[ "$install_mode" == "server" ]]; then
+        detect_os
+        check_python
+        check_cuda
+        install_system_deps
+
+        # 如果需要安装CUDA Toolkit，在conda环境创建前安装
+        if [[ "$NEED_INSTALL_CUDA" == true ]]; then
+            install_cuda_toolkit
+        fi
+    else
+        # 客户端安装只需要基本检测
+        detect_os
+        check_python
     fi
 
     # 安装/配置Miniconda
     install_miniconda
-    create_conda_env
-    install_python_deps
-    create_config
+
+    # 根据安装模式创建环境和安装依赖
+    case "$install_mode" in
+        "full")
+            create_conda_env
+            install_python_deps
+            create_config
+            ;;
+        "client")
+            create_conda_env
+            install_client_deps
+            create_client_config
+            ;;
+        "server")
+            create_conda_env
+            install_server_deps
+            create_server_config
+            ;;
+    esac
+
     create_log_dir
-    verify_installation
-    show_post_install_info
+    verify_installation "$install_mode"
+    show_post_install_info "$install_mode"
 
     log_success "安装完成!"
 }

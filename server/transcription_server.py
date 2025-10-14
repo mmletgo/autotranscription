@@ -83,36 +83,25 @@ def initialize_model():
 
     try:
         model_size = config["model_size"]
-        if model_size == "large-v3":
-            try:
-                model = WhisperModel(
-                    "openai/whisper-large-v3",
-                    device=config["device"],
-                    compute_type=config["compute_type"],
-                    local_files_only=False,
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to load openai/whisper-large-v3, trying Systran version: {e}"
-                )
-                model = WhisperModel(
-                    model_size,
-                    device=config["device"],
-                    compute_type=config["compute_type"],
-                    local_files_only=False,
-                )
-        else:
-            model = WhisperModel(
-                model_size, device=config["device"], compute_type=config["compute_type"]
-            )
-        logger.info("Model loading completed")
-    except Exception as e:
-        logger.error(f"Failed to load model {config['model_size']}: {e}")
-        logger.info("Falling back to base model")
+        # 优先使用Systran的Faster Whisper模型
         model = WhisperModel(
-            "base", device=config["device"], compute_type=config["compute_type"]
+            model_size,
+            device=config["device"],
+            compute_type=config["compute_type"],
+            local_files_only=False,
         )
-        logger.info("Base model loaded as fallback")
+        logger.info("Systran Faster Whisper model loaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to load Systran model {config['model_size']}: {e}")
+        logger.info("Falling back to base model")
+        try:
+            model = WhisperModel(
+                "base", device=config["device"], compute_type=config["compute_type"]
+            )
+            logger.info("Base model loaded as fallback")
+        except Exception as fallback_error:
+            logger.error(f"Failed to load base model: {fallback_error}")
+            raise fallback_error
 
 
 # Configure CORS

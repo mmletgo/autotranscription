@@ -61,26 +61,30 @@ AutoTranscription 管理脚本
 用法: $SCRIPT_NAME <命令> [选项]
 
 命令:
-    install     安装所有依赖
-    start       启动服务端和客户端
-    stop        停止服务端和客户端
-    restart     重启服务端和客户端
-    server      管理服务端 (start|stop|restart|status|logs|health|monitor)
-    client      启动客户端
-    service     客户端服务管理 (install|uninstall|enable|disable|start|stop|restart|status|logs)
-    status      显示系统状态
-    clean       清理系统 (保留配置)
-    reset       完全重置系统 (删除所有数据)
-    -h, --help  显示此帮助信息
+    install         安装完整系统依赖
+    install-client  仅安装客户端依赖
+    install-server  仅安装服务端依赖
+    start           启动服务端和客户端
+    stop            停止服务端和客户端
+    restart         重启服务端和客户端
+    server          管理服务端 (start|stop|restart|status|logs|health|monitor)
+    client          启动客户端
+    service         客户端服务管理 (install|uninstall|enable|disable|start|stop|restart|status|logs)
+    status          显示系统状态
+    clean           清理系统 (保留配置)
+    reset           完全重置系统 (删除所有数据)
+    -h, --help      显示此帮助信息
 
 示例:
-    $SCRIPT_NAME install              # 安装依赖
-    $SCRIPT_NAME start                # 启动完整系统
-    $SCRIPT_NAME server start         # 仅启动服务端
-    $SCRIPT_NAME server status        # 查看服务端状态
-    $SCRIPT_NAME client               # 启动客户端
-    $SCRIPT_NAME status               # 查看系统状态
-    $SCRIPT_NAME clean                # 清理系统
+    $SCRIPT_NAME install             # 安装完整系统
+    $SCRIPT_NAME install-client      # 仅安装客户端依赖
+    $SCRIPT_NAME install-server      # 仅安装服务端依赖
+    $SCRIPT_NAME start               # 启动完整系统
+    $SCRIPT_NAME server start        # 仅启动服务端
+    $SCRIPT_NAME server status       # 查看服务端状态
+    $SCRIPT_NAME client              # 启动客户端
+    $SCRIPT_NAME status              # 查看系统状态
+    $SCRIPT_NAME clean               # 清理系统
 
 EOF
 }
@@ -153,34 +157,59 @@ show_status() {
     echo "================================"
 }
 
-# 安装系统
+# 安装完整系统
 install_system() {
     show_banner
-    log_step "开始安装AutoTranscription系统..."
-
-    # 检查是否已有conda环境
-    if command -v conda &> /dev/null && conda env list | grep -q "^autotranscription "; then
-        log_warning "检测到已有Conda环境，是否重新安装？"
-        read -p "继续安装将删除现有环境 [y/N]: " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            conda env remove -n autotranscription -y
-            log_info "已删除现有Conda环境"
-        else
-            log_info "取消安装"
-            exit 0
-        fi
-    fi
+    log_step "开始安装AutoTranscription完整系统..."
 
     # 运行安装脚本
-    "$PROJECT_DIR/scripts/install_deps.sh"
+    "$PROJECT_DIR/scripts/install_deps.sh" full
 
-    log_success "系统安装完成！"
+    log_success "完整系统安装完成！"
     echo
     log_info "接下来可以运行:"
     echo "  $SCRIPT_NAME start     # 启动系统"
     echo "  $SCRIPT_NAME server    # 管理服务端"
     echo "  $SCRIPT_NAME client    # 启动客户端"
+    echo
+    log_info "激活环境: conda activate autotranscription"
+}
+
+# 仅安装客户端依赖
+install_client_only() {
+    show_banner
+    log_step "开始安装客户端依赖..."
+
+    # 运行安装脚本
+    "$PROJECT_DIR/scripts/install_deps.sh" client
+
+    log_success "客户端依赖安装完成！"
+    echo
+    log_info "接下来可以运行:"
+    echo "  $SCRIPT_NAME client           # 启动客户端"
+    echo "  $SCRIPT_NAME service install  # 安装客户端服务"
+    echo
+    log_info "激活环境: conda activate autotranscription"
+    echo
+    log_info "连接服务端:"
+    echo "  1. 确保服务端已启动"
+    echo "  2. 修改 config/client_config.json 中的 server_url"
+    echo "  3. 运行 $SCRIPT_NAME client"
+}
+
+# 仅安装服务端依赖
+install_server_only() {
+    show_banner
+    log_step "开始安装服务端依赖..."
+
+    # 运行安装脚本
+    "$PROJECT_DIR/scripts/install_deps.sh" server
+
+    log_success "服务端依赖安装完成！"
+    echo
+    log_info "接下来可以运行:"
+    echo "  $SCRIPT_NAME server start     # 启动服务端"
+    echo "  $SCRIPT_NAME server status    # 查看服务端状态"
     echo
     log_info "激活环境: conda activate autotranscription"
 }
@@ -323,6 +352,12 @@ main() {
     case "${1:-help}" in
         "install")
             install_system
+            ;;
+        "install-client")
+            install_client_only
+            ;;
+        "install-server")
+            install_server_only
             ;;
         "start")
             start_system

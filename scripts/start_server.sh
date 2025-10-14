@@ -18,7 +18,7 @@ SCRIPT_NAME="$(basename "$0")"
 PID_FILE="$PROJECT_DIR/logs/transcription_server.pid"
 LOG_FILE="$PROJECT_DIR/logs/transcription_server.log"
 ERROR_LOG_FILE="$PROJECT_DIR/logs/transcription_server_error.log"
-CONFIG_FILE="$PROJECT/config/server_config.json"
+CONFIG_FILE="$PROJECT_DIR/config/server_config.json"
 CONDA_ENV_NAME="autotranscription"
 
 # 日志函数
@@ -258,15 +258,30 @@ start_service() {
 
     # 创建启动脚本，确保在conda环境中运行
     cat > /tmp/start_server.sh << EOF
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate "$CONDA_ENV_NAME"
+#!/bin/bash
+# 确保conda环境正确激活
+CONDA_BASE="/home/rongheng/anaconda3"
+if [ -f "\$CONDA_BASE/etc/profile.d/conda.sh" ]; then
+    . "\$CONDA_BASE/etc/profile.d/conda.sh"
+    conda activate "$CONDA_ENV_NAME" || {
+        echo "Failed to activate conda environment, trying direct activation..."
+        . "\$CONDA_BASE/bin/activate" "$CONDA_ENV_NAME" || exit 1
+    }
+else
+    echo "Conda not found at \$CONDA_BASE"
+    exit 1
+fi
+
 cd "$PROJECT_DIR/server"
+
+# 导出Python路径以确保模块可用
+export PYTHONPATH="$PROJECT_DIR/server:$PYTHONPATH"
+
 exec gunicorn \\
     --bind "$HOST:$PORT" \\
     --workers "$WORKERS" \\
     --worker-class gevent \\
     --timeout "$TIMEOUT" \\
-    --keepalive 5 \\
     --max-requests 1000 \\
     --max-requests-jitter 100 \\
     --preload \\
