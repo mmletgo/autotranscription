@@ -450,23 +450,15 @@ install_python_deps() {
 
     # 根据CUDA可用性安装PyTorch
     if [[ "$CUDA_AVAILABLE" == true ]]; then
-        log_info "安装CUDA版本的PyTorch（conda）..."
-        # 使用conda-forge的PyTorch，确保与CUDA版本兼容
-        conda install -y \
-            pytorch \
-            torchvision \
-            torchaudio \
-            pytorch-cuda=12.1 \
-            -c pytorch \
-            -c nvidia/label/cuda-12.1.0
+        log_info "安装CUDA版本的PyTorch（pip）..."
+        # 使用pip安装PyTorch，避免conda依赖冲突
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 || {
+            log_warning "PyTorch CUDA版本安装失败，尝试使用CPU版本..."
+            pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        }
     else
-        log_info "安装CPU版本的PyTorch（conda）..."
-        conda install -y \
-            pytorch \
-            torchvision \
-            torchaudio \
-            cpuonly \
-            -c pytorch
+        log_info "安装CPU版本的PyTorch（pip）..."
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
     fi
 
     # 安装Web服务依赖

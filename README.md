@@ -19,8 +19,8 @@
 
 ### 1. 系统要求
 
-- **操作系统**: Ubuntu 20.04+, CentOS 7+, 其他 Linux 发行版
-- **Python**: 3.8 或更高版本
+- **操作系统**: Linux (Ubuntu 20.04+, CentOS 7+), macOS 10.15+, Windows 10+
+- **Python**: 3.8 或更高版本 (通过 Miniconda 管理)
 - **GPU**: NVIDIA GPU (可选，支持 CPU 模式)
 - **CUDA**: 11.8+ (GPU 模式需要，自动安装)
 - **内存**: 建议 16GB+ (高并发模式需要更多内存)
@@ -33,11 +33,15 @@
 git clone <repository-url>
 cd autotranscription
 
-# 一键安��� (自动安装 Miniconda + CUDA + 所有依赖)
+# 一键安装 (自动安装 Miniconda + CUDA + 所有依赖)
 ./scripts/manage.sh install
 ```
 
 > **注意**: 安装脚本会自动检测并安装 Miniconda 和 CUDA Toolkit，无需手动配置。
+
+### 手动安装
+
+如果自动安装脚本遇到问题，或者您希望了解安装过程，请参考 [手动安装教程](docs/MANUAL_INSTALL.md) 获取详细的分步安装指南。
 
 ### 3. 启动系统
 
@@ -107,6 +111,126 @@ cd autotranscription
 SERVER_URL=http://192.168.1.100:5000 ./scripts/start_client.sh start
 HOTKEY="<ctrl>+<alt>+a" ./scripts/start_client.sh start
 ```
+
+## 客户端系统服务 (跨平台支持)
+
+AutoTranscription 支持将客户端注册为系统服务，实现开机自启和后台运行。
+
+### 支持的平台
+
+- **Linux**: 使用 systemd 服务管理
+- **macOS**: 使用 launchd 服务管理
+- **Windows**: 使用 NSSM (Non-Sucking Service Manager)
+
+### 客户端服务管理
+
+#### 安装服务
+```bash
+# 安装客户端服务 (自动检测操作系统)
+./scripts/install_client_service.sh install
+
+# 启用开机自启
+./scripts/install_client_service.sh enable
+
+# 启动服务
+./scripts/install_client_service.sh start
+
+# 查看服务状态
+./scripts/install_client_service.sh status
+
+# 查看服务日志
+./scripts/install_client_service.sh logs
+
+# 停止服务
+./scripts/install_client_service.sh stop
+
+# 重启服务
+./scripts/install_client_service.sh restart
+```
+
+#### 卸载服务
+```bash
+# 完全卸载 (删除服务、配置和日志)
+./scripts/uninstall_client_service.sh full
+
+# 仅卸载服务 (保留配置和日志)
+./scripts/uninstall_client_service.sh service
+
+# 清理残留文件
+./scripts/uninstall_client_service.sh clean
+
+# 查看卸载前状态
+./scripts/uninstall_client_service.sh status
+```
+
+#### 服务特性
+
+**客户端服务特性**:
+- **开机自启**: 系统启动后自动运行客户端
+- **自动重启**: 服务异常退出时自动重启
+- **日志管理**: 统一的日志输出和管理
+- **安全设置**: 限制权限，保护系统安全
+- **环境隔离**: 使用 conda 环境运行
+- **跨平台支持**: Linux、macOS、Windows 统一命令
+
+**平台特定说明**:
+
+| 平台 | 服务管理器 | 服务文件位置 | 启动方式 |
+|------|------------|--------------|----------|
+| Linux | systemd | `/etc/systemd/system/autotranscription-client.service` | `systemctl` |
+| macOS | launchd | `~/Library/LaunchAgents/com.autotranscription.client.plist` | `launchctl` |
+| Windows | NSSM | Windows 服务注册表 | `nssm` |
+
+#### 故障排除
+
+**常见问题**:
+
+1. **服务启动失败**
+   ```bash
+   # 检查服务状态
+   ./scripts/install_client_service.sh status
+
+   # Linux 查看详细日志
+   sudo journalctl -u autotranscription-client -n 50
+   ```
+
+2. **权限问题**
+   ```bash
+   # 确保脚本有执行权限
+   chmod +x scripts/install_client_service.sh
+   chmod +x scripts/uninstall_client_service.sh
+   chmod +x scripts/start_client.sh
+   ```
+
+3. **环境问题**
+   ```bash
+   # 检查 conda 环境
+   conda env list
+
+   # 检查客户端配置
+   ./scripts/start_client.sh check
+   ```
+
+4. **热键冲突**
+   - 检查客户端配置文件中的热键设置
+   - 确保没有其他程序占用相同热键
+
+**手动调试**:
+```bash
+# 激活 conda 环境
+conda activate autotranscription
+
+# 手动运行客户端
+./scripts/start_client.sh start
+
+# 查看实时日志
+tail -f logs/client.log
+```
+
+**日志位置**:
+- **服务日志**: `logs/client_service.log`
+- **Linux 系统日志**: `sudo journalctl -u autotranscription-client`
+- **客户端日志**: `logs/client.log`
 
 ## 配置文件
 
@@ -378,10 +502,11 @@ autotranscription/
 │   ├── start_server.sh    # 服务端管理 (含监控)
 │   ├── start_client.sh    # 客户端启动脚本
 │   ├── manage.sh          # 综合管理脚本
+│   ├── install_client_service.sh  # 跨平台客户端服务安装
+│   ├── uninstall_client_service.sh # 跨平台客户端服务卸载
 │   ├── verify_cleanup.sh  # 环境验证工具
 │   └── cuda_check.sh      # CUDA 环境诊断
 ├── logs/                  # 日志目录
-├── systemd/               # 系统服务配置
 └── CLAUDE.md              # Claude Code 开发指南
 ```
 
@@ -400,14 +525,7 @@ autotranscription/
 - 中文文本转换支持
 
 ### 开发和调试
-
-1. **环境验证**
-   ```bash
-   ./scripts/verify_cleanup.sh     # 验证环境完整性
-   ./scripts/cuda_check.sh         # 检查 CUDA 环境
-   ```
-
-2. **开发调试**
+1. **开发调试**
    ```bash
    # 开发模式启动服务端 (前台运行)
    cd server && python transcription_server.py
@@ -419,7 +537,7 @@ autotranscription/
    ./scripts/start_client.sh check
    ```
 
-3. **添加新功能**
+2. **添加新功能**
    1. 修改相应的配置文件
    2. 更新服务端/客户端代码
    3. 使用 `./scripts/manage.sh restart` 重启服务测试

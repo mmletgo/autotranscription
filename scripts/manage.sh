@@ -67,6 +67,7 @@ AutoTranscription 管理脚本
     restart     重启服务端和客户端
     server      管理服务端 (start|stop|restart|status|logs|health|monitor)
     client      启动客户端
+    service     客户端服务管理 (install|uninstall|enable|disable|start|stop|restart|status|logs)
     status      显示系统状态
     clean       清理系统 (保留配置)
     reset       完全重置系统 (删除所有数据)
@@ -123,6 +124,22 @@ show_status() {
         echo -e "✓ ${GREEN}服务端: 运行中${NC}"
     else
         echo -e "✗ ${RED}服务端: 未运行${NC}"
+    fi
+
+    # 检查客户端服务状态
+    if systemctl list-unit-files | grep -q "autotranscription-client.service" 2>/dev/null; then
+        if systemctl is-active --quiet "autotranscription-client" 2>/dev/null; then
+            echo -e "✓ ${GREEN}客户端服务: 运行中${NC}"
+            if systemctl is-enabled --quiet "autotranscription-client" 2>/dev/null; then
+                echo -e "  - 开机自启: 已启用"
+            else
+                echo -e "  - 开机自启: 已禁用"
+            fi
+        else
+            echo -e "✗ ${YELLOW}客户端服务: 已安装但未运行${NC}"
+        fi
+    else
+        echo -e "✗ ${RED}客户端服务: 未安装${NC}"
     fi
 
     # 检查GPU支持
@@ -325,6 +342,13 @@ main() {
             ;;
         "client")
             start_client
+            ;;
+        "service")
+            if [[ -z "$2" ]]; then
+                log_error "请指定服务命令: install|uninstall|enable|disable|start|stop|restart|status|logs"
+                exit 1
+            fi
+            "$PROJECT_DIR/scripts/install_client_service.sh" "$2"
             ;;
         "status")
             show_status
