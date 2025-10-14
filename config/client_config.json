@@ -1,0 +1,16 @@
+{
+  "server_url": "http://localhost:5000",
+  "max_time": 300,
+  "language": "zh",
+  "streaming": false,
+  "zh_convert": "t2s",
+  "key_combo": null,
+  "_comments": {
+    "server_url": "Server API address, e.g.: http://192.168.1.100:5000",
+    "max_time": "Maximum recording duration (seconds)",
+    "language": "Language: zh(Chinese), en(English), etc",
+    "streaming": "Enable streaming output",
+    "zh_convert": "Chinese conversion: none, t2s(traditional to simplified), s2t(simplified to traditional)",
+    "key_combo": "Hotkey, e.g.: <alt>, <ctrl>+<alt>+a, <win>+z"
+  }
+}

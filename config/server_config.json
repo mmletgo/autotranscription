@@ -1,0 +1,19 @@
+{
+  "model_size": "large-v3",
+  "device": "cuda",
+  "compute_type": "int8",
+  "language": "zh",
+  "initial_prompt": "以下是普通话的句子。",
+  "host": "0.0.0.0",
+  "port": 5000,
+  "network_mode": "lan",
+  "_comments": {
+    "model_size": "Model size: tiny, base, small, medium, large-v1, large-v2, large-v3",
+    "device": "Device: cpu, cuda, auto",
+    "compute_type": "Compute type: int8, float16, float32",
+    "language": "Language: zh(Chinese), en(English), ja(Japanese), etc",
+    "host": "Listen address: 0.0.0.0(LAN), 127.0.0.1(local only)",
+    "port": "Port number",
+    "network_mode": "Network mode: lan(LAN), internet(Internet)"
+  }
+}

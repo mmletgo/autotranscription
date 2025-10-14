@@ -1,0 +1,5 @@
+# Server dependencies
+flask>=2.3.0
+flask-cors>=4.0.0
+faster-whisper>=0.9.0
+numpy>=1.24.0
