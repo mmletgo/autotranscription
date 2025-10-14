@@ -1,208 +1,159 @@
-# 语音转写系统 - 客户端/服务端架构
+# AutoTranscription 语音转文字系统
 
-这是一个基于 Faster Whisper 的语音转写系统，采用客户端-服务端架构设计。服务端提供 AI 转写运算，客户端通过网络 API 调用服务。
+基于 Faster Whisper 的高并发客户端-服务器架构语音转文字系统，支持 GPU 加速和生产环境部署。
 
-## 🏗️ 项目结构
+## 特性
 
-```
-autotranscription/
-├── server/                      # 服务端
-│   ├── transcription_server.py  # 服务端主程序
-│   └── requirements.txt         # 服务端依赖
-├── client/                      # 客户端
-│   ├── client.py                # 客户端主程序
-│   └── requirements.txt         # 客户端依赖
-├── config/                      # 配置文件
-│   ├── server_config.json       # 服务端配置
-│   └── client_config.json       # 客户端配置
-├── assets/                      # 音效文件
-│   ├── bo.wav
-│   └── click.wav
-└── README.md                    # 本文档
-```
+- 🎯 **高精度识别**: 基于 OpenAI Whisper large-v3 模型
+- 🚀 **高并发处理**: 支持 8-16 个同时转写请求，100 个请求队列
+- 🔥 **GPU 加速**: 支持 NVIDIA CUDA，显著提升转录速度
+- 🏭 **生产就绪**: 包含进程管理、实时监控、健康检查
+- 📊 **性能监控**: 实时队列状态、成功率统计、负载管理
+- 🔥 **热键支持**: 全局快捷键快速启动录音
+- 🌐 **网络支持**: 支持局域网和互联网访问
+- 📝 **实时输出**: 支持流式转录结果
+- 🇨🇳 **中文优化**: 针对中文语音识别优化
+- 🧠 **智能内存管理**: 自动 GPU 内存清理和优化
 
-## ✨ 特性
+## 快速开始
 
-### 服务端
-- 🚀 REST API 接口，基于 Flask
-- 🔒 支持局域网/互联网访问控制
-- 🎯 使用 Faster Whisper 进行高效转写
-- 💻 支持 CPU/GPU 推理
-- 🌍 多语言支持（中文、英文、日语等）
-- 📊 JSON 和二进制音频数据格式
+### 1. 系统要求
 
-### 客户端
-- 🎤 录音功能（PyAudio）
-- ⌨️ 快捷键触发（默认：Alt 键，可自定义）
-- 📋 自动复制粘贴转写结果
-- 🔄 实时流式输出（可选）
-- 🇨🇳 中文繁简转换（可选）
-- 🌐 网络 API 调用
+- **操作系统**: Ubuntu 20.04+, CentOS 7+, 其他 Linux 发行版
+- **Python**: 3.8 或更高版本
+- **GPU**: NVIDIA GPU (可选，支持 CPU 模式)
+- **CUDA**: 11.8+ (GPU 模式需要，自动安装)
+- **内存**: 建议 16GB+ (高并发模式需要更多内存)
+- **网络**: 稳定的网络连接用于模型下载和 API 调用
 
-## 📦 安装
-
-### 服务端安装
+### 2. 一键安装
 
 ```bash
-cd server
-pip install -r requirements.txt
+# 克隆项目
+git clone <repository-url>
+cd autotranscription
+
+# 一键安��� (自动安装 Miniconda + CUDA + 所有依赖)
+./scripts/manage.sh install
 ```
 
-**注意**: 如果使用 GPU 加速，需要安装对应的 CUDA 驱动和库。
+> **注意**: 安装脚本会自动检测并安装 Miniconda 和 CUDA Toolkit，无需手动配置。
 
-### 客户端安装
+### 3. 启动系统
 
 ```bash
-cd client
-pip install -r requirements.txt
+# 启动完整系统
+./scripts/manage.sh start
+
+# 或者分别启动
+./scripts/manage.sh server start  # 启动服务端
+./scripts/manage.sh client        # 启动客户端
 ```
 
-**Linux 系统额外依赖**:
+### 4. 使用客户端
+
+启动客户端后，使用快捷键 `Alt` 开始录音，再次按下停止录音并获取转录结果。
+
+## 详细使用
+
+### 管理脚本 (`./scripts/manage.sh`)
+
 ```bash
-# Ubuntu/Debian
-sudo apt-get install portaudio19-dev python3-pyaudio
+# 系统管理
+./scripts/manage.sh install       # 安装依赖
+./scripts/manage.sh start         # 启动系统
+./scripts/manage.sh stop          # 停止系统
+./scripts/manage.sh restart       # 重启系统
+./scripts/manage.sh status        # 查看状态
 
-# Fedora
-sudo dnf install portaudio-devel
+# 服务端管理
+./scripts/manage.sh server start     # 启动高并发服务端
+./scripts/manage.sh server stop      # 停止服务端
+./scripts/manage.sh server status    # 查看服务端状态
+./scripts/manage.sh server logs      # 查看服务端日志
+./scripts/manage.sh server health    # 健康检查
+./scripts/manage.sh server monitor   # 实时并发监控
+
+# 客户端
+./scripts/manage.sh client          # 启动客户端
+
+# 系统维护
+./scripts/manage.sh clean           # 清理系统
+./scripts/manage.sh reset           # 完全重置
 ```
 
-## ⚙️ 配置
+### 服务端脚本 (`./scripts/start_server.sh`)
+
+```bash
+./scripts/start_server.sh start     # 启动高并发服务端
+./scripts/start_server.sh stop      # 停止服务端
+./scripts/start_server.sh restart   # 重启服务端
+./scripts/start_server.sh status    # 查看状态
+./scripts/start_server.sh logs      # 查看日志
+./scripts/start_server.sh health    # 健康检查
+./scripts/start_server.sh monitor   # 实时并发监控
+./scripts/start_server.sh config    # 显示配置
+```
+
+### 客户端脚本 (`./scripts/start_client.sh`)
+
+```bash
+# 基本使用
+./scripts/start_client.sh start     # 启动客户端
+./scripts/start_client.sh check     # 检查服务连接
+./scripts/start_client.sh config    # 显示配置
+
+# 环境变量覆盖
+SERVER_URL=http://192.168.1.100:5000 ./scripts/start_client.sh start
+HOTKEY="<ctrl>+<alt>+a" ./scripts/start_client.sh start
+```
+
+## 配置文件
 
 ### 服务端配置 (`config/server_config.json`)
 
 ```json
 {
-  "model_size": "base",           // 模型大小: tiny, base, small, medium, large
-  "device": "cpu",                // 设备: cpu, cuda, auto
-  "compute_type": "int8",         // 计算类型: int8, float16, float32
-  "language": "zh",               // 语言: zh(中文), en(英文), 等
-  "initial_prompt": "以下是普通话的句子。",  // 初始提示
-  "host": "0.0.0.0",              // 监听地址: 0.0.0.0(局域网), 127.0.0.1(本地)
-  "port": 5000,                   // 端口号
-  "network_mode": "lan"           // 网络模式: lan(局域网), internet(互联网)
+    "model_size": "large-v3",              // 模型大小: tiny/base/small/medium/large-v3
+    "device": "cuda",                     // 设备: cpu/cuda/auto
+    "compute_type": "float16",            // 计算精度: int8/float16/float32
+    "network_mode": "lan",                // 网络模式: lan/internet
+    "host": "0.0.0.0",                   // 监听地址
+    "port": 5000,                        // 监听端口
+    "workers": 8,                        // Gunicorn 工作进程数
+    "max_concurrent_transcriptions": 16,  // 最大并发转写数
+    "queue_size": 100,                   // 请求队列大小
+    "timeout": 600,                      // 请求超时时间(秒)
+    "log_level": "INFO"                  // 日志级别
 }
 ```
 
-**网络模式说明**:
-- `lan`: 局域网模式，限制 CORS，适合内网使用
-- `internet`: 互联网模式，开放 CORS，适合公网访问（需配置防火墙）
+**高并发配置说明**:
+- `max_concurrent_transcriptions`: 同时处理的最大转写请求数
+- `queue_size`: 请求队列容量，满载时返回 503 错误
+- `workers`: Gunicorn 工作进程数，建议 CPU 核心数 × 2
 
 ### 客户端配置 (`config/client_config.json`)
 
 ```json
 {
-  "server_url": "http://localhost:5000",  // 服务端地址
-  "max_time": 300,                        // 最大录音时长(秒)
-  "language": "zh",                       // 语言
-  "initial_prompt": "以下是普通话的句子。",
-  "streaming": false,                     // 流式输出
-  "zh_convert": "t2s",                    // 中文转换: none, t2s, s2t
-  "key_combo": null                       // 快捷键(默认: <alt>)
+    "server_url": "http://localhost:5000",  // 服务端地址
+    "max_time": 30,                         // 最大录音时长(秒)
+    "zh_convert": "none",                   // 中文转换: none/t2s/s2t
+    "streaming": true,                      // 流式输出
+    "key_combo": "<alt>",                   // 快捷键组合
+    "sample_rate": 16000,                   // 采样率
+    "channels": 1                           // 声道数
 }
 ```
 
-## 🚀 使用方法
+## API 接口
 
-### 1. 启动服务端
-
-```bash
-cd server
-python transcription_server.py
-```
-
-服务端启动后会显示:
-```
-==================================================
-语音转写服务启动
-地址: http://0.0.0.0:5000
-模型: base
-设备: cpu
-网络模式: lan
-局域网访问地址: http://<本机IP>:5000
-==================================================
-```
-
-### 2. 启动客户端
-
-**默认配置**:
-```bash
-cd client
-python client.py
-```
-
-**指定服务器地址**:
-```bash
-# 连接到局域网服务器
-python client.py -s http://192.168.1.100:5000
-
-# 连接到远程服务器
-python client.py -s http://example.com:5000
-```
-
-**自定义快捷键**:
-```bash
-# 使用组合键
-python client.py -k "<ctrl>+<alt>+a"
-python client.py -k "<win>+z"
-python client.py -k "<cmd>+<alt>+r"
-
-# 使用单个键（默认是 Alt）
-python client.py -k "<alt>"
-python client.py -k "<ctrl>"
-```
-
-**启用流式输出**:
-```bash
-python client.py --streaming
-```
-
-### 3. 录音转写
-
-1. 按下快捷键（**默认：Alt 键**）开始录音
-2. 听到"哔"声后开始说话
-3. 再次按下快捷键停止录音
-4. 等待转写完成，结果会自动粘贴到当前光标位置
-
-**快捷键说明**:
-- 默认使用 **Alt** 键（左 Alt 或右 Alt 均可）
-- 可通过 `-k` 参数自定义为其他键或组合键
-- 示例：`python client.py -k "<ctrl>+<alt>+a"`
-
-## 🔧 命令行参数
-
-### 服务端
-服务端参数通过配置文件设置，不支持命令行参数。
-
-### 客户端
-
-```bash
-python client.py [选项]
-
-选项:
-  -s, --server-url URL        服务端API地址 (默认: http://localhost:5000)
-  -k, --key-combo KEYS        快捷键，如: <alt>, <ctrl>+<alt>+a (默认: <alt>)
-  -t, --max-time SECONDS      最大录音时长（秒），默认: 300
-  -l, --language CODE         语言代码，如: zh, en, ja
-  --initial-prompt TEXT       初始提示文本
-  --streaming                 启用流式输出模式
-  --zh-convert MODE           中文转换: t2s(繁转简), s2t(简转繁), none(禁用)
-```
-
-## 🌐 API 文档
+服务端提供 RESTful API：
 
 ### 健康检查
 ```http
 GET /api/health
-```
-
-**响应**:
-```json
-{
-  "status": "healthy",
-  "model": "base",
-  "device": "cpu",
-  "timestamp": "2025-10-14T12:00:00"
-}
 ```
 
 ### 获取配置
@@ -210,116 +161,274 @@ GET /api/health
 GET /api/config
 ```
 
-**响应**:
-```json
-{
-  "model_size": "base",
-  "device": "cpu",
-  "compute_type": "int8",
-  "language": "zh",
-  "network_mode": "lan"
-}
+### 获取详细状态
+```http
+GET /api/status
 ```
 
-### 转写音频（JSON格式）
+返回实时性能指标：
+- 队列大小和使用率
+- 活跃转写数量
+- 成功/失败请求统计
+- 模型信息
+
+### 语音转录 (JSON格式)
 ```http
 POST /api/transcribe
 Content-Type: application/json
 
 {
-  "audio_data": [0.1, 0.2, ...],
-  "sample_rate": 16000,
-  "language": "zh",
-  "initial_prompt": "以下是普通话的句子。",
-  "streaming": false
+    "audio_data": [音频数据数组],
+    "sample_rate": 16000,
+    "language": "zh",
+    "initial_prompt": "以下是普通话句子。",
+    "streaming": false
 }
 ```
 
-**响应**:
-```json
-{
-  "success": true,
-  "language": "zh",
-  "language_probability": 0.95,
-  "text": "这是转写的完整文本",
-  "segments": [
-    {
-      "start": 0.0,
-      "end": 2.5,
-      "text": "这是转写的完整文本"
-    }
-  ]
-}
-```
-
-### 转写音频（二进制格式）
+### 语音转录 (二进制格式)
 ```http
 POST /api/transcribe_binary
 Content-Type: application/octet-stream
 X-Sample-Rate: 16000
 X-Language: zh
-X-Initial-Prompt: 以下是普通话的句子。
+X-Initial-Prompt: 以下是普通话句子。
 
 [二进制音频数据]
 ```
 
-## 🔐 安全建议
+## 生产环境部署
 
-### 局域网部署
-1. 使用 `network_mode: "lan"` 配置
-2. 设置 `host: "0.0.0.0"` 允许局域网访问
-3. 配置防火墙规则，只允许内网 IP 访问
+### 1. 系统服务配置
 
-### 互联网部署
-1. 使用 `network_mode: "internet"` 配置
-2. 配置 HTTPS（建议使用 Nginx 反向代理）
-3. 添加身份验证机制（如 JWT Token）
-4. 限制请求频率和大小
-5. 使用专业的 WSGI 服务器（如 Gunicorn）
+创建 systemd 服务文件：
 
-**生产环境部署示例**:
 ```bash
-# 安装 Gunicorn
-pip install gunicorn
-
-# 启动服务（4个工作进程）
-gunicorn -w 4 -b 0.0.0.0:5000 transcription_server:app
+sudo nano /etc/systemd/system/autotranscription.service
 ```
 
-## 🐛 故障排查
+```ini
+[Unit]
+Description=AutoTranscription Service
+After=network.target
 
-### 客户端无法连接服务器
-1. 检查服务端是否启动
-2. 确认服务器地址和端口正确
-3. 检查防火墙设置
-4. 测试网络连通性: `ping <服务器IP>`
+[Service]
+Type=forking
+User=your-username
+WorkingDirectory=/path/to/autotranscription
+ExecStart=/path/to/autotranscription/scripts/start_server.sh start
+ExecStop=/path/to/autotranscription/scripts/start_server.sh stop
+ExecReload=/path/to/autotranscription/scripts/start_server.sh restart
+PIDFile=/path/to/autotranscription/logs/transcription_server.pid
+Restart=always
+RestartSec=10
 
-### 录音没有声音
-1. 检查麦克风权限
-2. 确认麦克风设备正常
-3. 检查系统音频设置
+[Install]
+WantedBy=multi-user.target
+```
 
-### 转写结果不准确
-1. 尝试使用更大的模型 (`small`, `medium`, `large`)
-2. 提供合适的 `initial_prompt`
-3. 指定正确的语言代码
-4. 确保录音环境安静
+启用和启动服务：
 
-### GPU 加速不工作
-1. 检查 CUDA 驱动安装
-2. 确认 PyTorch/CTranslate2 支持 GPU
-3. 设置 `device: "cuda"` 或 `"auto"`
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable autotranscription
+sudo systemctl start autotranscription
+sudo systemctl status autotranscription
+```
 
-## 🤝 贡献
+### 2. 反向代理配置 (Nginx)
 
-欢迎提交 Issue 和 Pull Request！
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
 
-## 📄 许可证
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+    }
+}
+```
 
-[根据原项目许可证]
+### 3. 防火墙配置
 
-## 🙏 致谢
+```bash
+# Ubuntu/Debian
+sudo ufw allow 5000/tcp
 
-- [Faster Whisper](https://github.com/guillaumekln/faster-whisper)
-- [OpenAI Whisper](https://github.com/openai/whisper)
-- Flask 和相关开源项目
+# CentOS/RHEL
+sudo firewall-cmd --permanent --add-port=5000/tcp
+sudo firewall-cmd --reload
+```
+
+## 故障排除
+
+### 常见问题
+
+1. **模型下载失败**
+   ```bash
+   # 检查网络连接
+   curl -I https://huggingface.co
+
+   # 重新安装依赖
+   ./scripts/manage.sh clean
+   ./scripts/manage.sh install
+   ```
+
+2. **GPU 不可用**
+   ```bash
+   # 检查 NVIDIA 驱动
+   nvidia-smi
+
+   # 检查 CUDA 安装
+   nvcc --version
+
+   # 强制使用 CPU 模式
+   # 编辑 config/server_config.json，设置 "device": "cpu"
+   ```
+
+3. **端口被占用**
+   ```bash
+   # 查看端口占用
+   sudo netstat -tlnp | grep :5000
+
+   # 更改端口
+   # 编辑 config/server_config.json，修改 "port" 值
+   ```
+
+4. **权限问题**
+   ```bash
+   # 确保脚本有执行权限
+   chmod +x scripts/*.sh
+
+   # 检查日志目录权限
+   sudo chown -R $USER:$USER logs/
+   ```
+
+### 日志文件位置
+
+- 服务端日志: `logs/transcription_server.log`
+- 错误日志: `logs/transcription_server_error.log`
+- 客户端日志: `logs/client.log`
+
+### 性能优化和监控
+
+1. **实时监控**
+   ```bash
+   # 实时并发监控仪表板
+   ./scripts/manage.sh server monitor
+
+   # 检查系统状态
+   curl http://localhost:5000/api/status
+
+   # 健康检查
+   curl http://localhost:5000/api/health
+   ```
+
+2. **GPU 优化**
+   - 使用 `compute_type: "float16"` 提升速度
+   - 确保有足够的 GPU 显存 (建议 8GB+)
+   - 系统会自动清理 GPU 内存
+
+3. **并发优化**
+   - 调整 `max_concurrent_transcriptions` 基于 GPU 内存 (8-16)
+   - 调整 `workers` 参数 (建议 CPU 核心数 × 2)
+   - 增加 `queue_size` 处理突发请求
+
+4. **网络优化**
+   - 使用二进制 API (`/api/transcribe_binary`) 减少传输开销
+   - 配置合适的超时时间 (默认 600 秒)
+
+### 性能指标
+
+**预期性能**:
+- **并发能力**: 8-16 个同时转写请求
+- **队列容量**: 100 个请求排队
+- **吞吐量**: 800-2000 转写/小时 (取决于音频长度)
+- **响应时间**: 10-60 秒 (取决于音频长度和模型)
+
+**监控指标**:
+- 队列使用率 (建议 < 80%)
+- 并发使用率 (建议 < 90%)
+- 成功率 (应该 > 95%)
+- 平均响应时间
+
+## 开发说明
+
+### 项目结构
+
+```
+autotranscription/
+├── client/                 # 客户端代码
+│   ├── client.py          # 主客户端程序 (状态机 + 热键支持)
+│   └── requirements.txt   # 客户端依赖
+├── server/                # 服务端代码
+│   ├── transcription_server.py  # 高并发转写服务器
+│   └── requirements.txt   # 服务端依赖
+├── config/                # 配置文件
+│   ├── server_config.json # 服务端配置 (含并发设置)
+│   └── client_config.json # 客户端配置
+├── scripts/               # 管理脚本
+│   ├── install_deps.sh    # 自动安装 (Miniconda + CUDA)
+│   ├── start_server.sh    # 服务端管理 (含监控)
+│   ├── start_client.sh    # 客户端启动脚本
+│   ├── manage.sh          # 综合管理脚本
+│   ├── verify_cleanup.sh  # 环境验证工具
+│   └── cuda_check.sh      # CUDA 环境诊断
+├── logs/                  # 日志目录
+├── systemd/               # 系统服务配置
+└── CLAUDE.md              # Claude Code 开发指南
+```
+
+### 架构特点
+
+**高并发服务端**:
+- ThreadPoolExecutor 管理并发转写 (8-16 个同时)
+- 请求队列系统 (100 个容量)
+- 自动 GPU 内存管理
+- 实时性能监控 API
+
+**客户端**:
+- 状态机架构 (READY → RECORDING → TRANSCRIBING → REPLAYING)
+- 全局热键支持 (pynput)
+- 自动重试和错误处理
+- 中文文本转换支持
+
+### 开发和调试
+
+1. **环境验证**
+   ```bash
+   ./scripts/verify_cleanup.sh     # 验证环境完整性
+   ./scripts/cuda_check.sh         # 检查 CUDA 环境
+   ```
+
+2. **开发调试**
+   ```bash
+   # 开发模式启动服务端 (前台运行)
+   cd server && python transcription_server.py
+
+   # 查看详细日志
+   ./scripts/manage.sh server logs
+
+   # 测试 API 连接
+   ./scripts/start_client.sh check
+   ```
+
+3. **添加新功能**
+   1. 修改相应的配置文件
+   2. 更新服务端/客户端代码
+   3. 使用 `./scripts/manage.sh restart` 重启服务测试
+   4. 通过监控功能验证性能影响
+
+## 许可证
+
+本项目基于 MIT 许可证开源。
+
+## 支持
+
+如有问题或建议，请提交 Issue 或 Pull Request。

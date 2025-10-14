@@ -7,6 +7,11 @@
   "host": "0.0.0.0",
   "port": 5000,
   "network_mode": "lan",
+  "workers": 8,
+  "timeout": 600,
+  "log_level": "INFO",
+  "max_concurrent_transcriptions": 16,
+  "queue_size": 100,
   "_comments": {
     "model_size": "Model size: tiny, base, small, medium, large-v1, large-v2, large-v3",
     "device": "Device: cpu, cuda, auto",
@@ -14,6 +19,11 @@
     "language": "Language: zh(Chinese), en(English), ja(Japanese), etc",
     "host": "Listen address: 0.0.0.0(LAN), 127.0.0.1(local only)",
     "port": "Port number",
-    "network_mode": "Network mode: lan(LAN), internet(Internet)"
+    "network_mode": "Network mode: lan(LAN), internet(Internet)",
+    "workers": "Gunicorn worker processes (recommended: 2-8 for GPU)",
+    "timeout": "Request timeout in seconds",
+    "log_level": "Logging level: DEBUG, INFO, WARNING, ERROR",
+    "max_concurrent_transcriptions": "Maximum concurrent transcription requests",
+    "queue_size": "Request queue size for load balancing"
   }
 }

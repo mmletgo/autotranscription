@@ -1,5 +1,28 @@
-# Server dependencies
+# AutoTranscription 服务端依赖
+# 适用于原生部署（非Docker环境）
+
+# Web框架
 flask>=2.3.0
 flask-cors>=4.0.0
-faster-whisper>=0.9.0
+
+# 语音转录核心
+faster-whisper>=1.0.0
+
+# 生产环境服务器
+gunicorn>=21.0.0
+gevent>=23.0.0
+
+# 数据处理
 numpy>=1.24.0
+requests>=2.31.0
+
+# 音频处理
+soundfile>=0.12.0
+ffmpeg-python>=0.2.0
+
+# 系统监控
+psutil>=5.9.0
+
+# 可选：GPU支持（将根据安装脚本自动选择）
+# torch>=2.0.0
+# torchaudio>=2.0.0
