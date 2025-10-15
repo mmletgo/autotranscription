@@ -464,7 +464,14 @@ tail -f logs/client.log
 **高并发配置说明**:
 - `max_concurrent_transcriptions`: 同时处理的最大转写请求数
 - `queue_size`: 请求队列容量，满载时返回 503 错误
-- `workers`: Gunicorn 工作进程数，建议 CPU 核心数 × 2
+- `workers`: Gunicorn 工作进程数，**推荐根据 GPU 显存配置**：
+  - **6GB 显存**: 建议 2-4 个 workers (如 RTX 3060 6GB)
+  - **8GB 显存**: 建议 4-6 个 workers (如 RTX 3060Ti, RTX 3070, RTX 4060)
+  - **10-12GB 显存**: 建议 6-8 个 workers (如 RTX 3080, RTX 3080Ti, RTX 4070)
+  - **16GB+ 显存**: 建议 8-12 个 workers (如 RTX 4080, RTX 4090, A100)
+  - **24GB+ 显存**: 建议 12-16 个 workers (如 RTX 4090, A5000, A6000)
+
+  > **注意**: 每个 worker 在 GPU 模式下会消耗约 1.5-2GB 显存 (large-v3 模型)。建议留出 2-3GB 显存余量以保证系统稳定性。同时也要考虑 CPU 核心数，workers 数量不应超过 CPU 核心数 × 2。
 
 ### 客户端配置 (`config/client_config.json`)
 

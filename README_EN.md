@@ -464,7 +464,14 @@ tail -f logs/client.log
 **High Concurrency Configuration Notes**:
 - `max_concurrent_transcriptions`: Maximum number of simultaneous transcription requests
 - `queue_size`: Request queue capacity, returns 503 error when full
-- `workers`: Gunicorn worker process count, recommended CPU cores × 2
+- `workers`: Gunicorn worker process count, **recommended based on GPU VRAM**:
+  - **6GB VRAM**: Recommended 2-4 workers (e.g., RTX 3060 6GB)
+  - **8GB VRAM**: Recommended 4-6 workers (e.g., RTX 3060Ti, RTX 3070, RTX 4060)
+  - **10-12GB VRAM**: Recommended 6-8 workers (e.g., RTX 3080, RTX 3080Ti, RTX 4070)
+  - **16GB+ VRAM**: Recommended 8-12 workers (e.g., RTX 4080, RTX 4090, A100)
+  - **24GB+ VRAM**: Recommended 12-16 workers (e.g., RTX 4090, A5000, A6000)
+
+  > **Note**: Each worker in GPU mode consumes approximately 1.5-2GB VRAM (large-v3 model). It is recommended to reserve 2-3GB VRAM headroom for system stability. Also consider CPU core count - workers should not exceed CPU cores × 2.
 
 ### Client Configuration (`config/client_config.json`)
 
