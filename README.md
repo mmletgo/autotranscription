@@ -719,7 +719,6 @@ autotranscription/
 │   ├── manage.sh          # 综合管理脚本
 │   ├── install_client_service.sh  # 跨平台客户端服务安装
 │   ├── uninstall_client_service.sh # 跨平台客户端服务卸载
-│   ├── verify_cleanup.sh  # 环境验证工具
 │   └── cuda_check.sh      # CUDA 环境诊断
 ├── logs/                  # 日志目录
 └── CLAUDE.md              # Claude Code 开发指南

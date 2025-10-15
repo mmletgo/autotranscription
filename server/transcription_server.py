@@ -420,6 +420,9 @@ def transcribe():
     global active_transcriptions
 
     try:
+        # 确保配置和���型已初始化
+        ensure_initialized()
+
         # 统计请求
         app.total_requests = getattr(app, "total_requests", 0) + 1
 
@@ -513,6 +516,9 @@ def transcribe_binary():
     global active_transcriptions
 
     try:
+        # 确保配置和模型已初始化
+        ensure_initialized()
+
         app.total_requests = getattr(app, "total_requests", 0) + 1
 
         # 获取参数

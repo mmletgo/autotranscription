@@ -124,13 +124,65 @@ show_status() {
     fi
 
     # 检查服务端状态
-    if "$PROJECT_DIR/scripts/start_server.sh" status >/dev/null 2>&1; then
-        echo -e "✓ ${GREEN}服务端: 运行中${NC}"
+    SERVER_PID_FILE="$PROJECT_DIR/logs/transcription_server.pid"
+    if [[ -f "$SERVER_PID_FILE" ]]; then
+        SERVER_PID=$(cat "$SERVER_PID_FILE" 2>/dev/null)
+        if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo -e "✓ ${GREEN}服务端: 运行中${NC}"
+            echo -e "  - PID: $SERVER_PID"
+
+            # 尝试获取服务端详细信息
+            if curl -s "http://localhost:5000/api/health" >/dev/null 2>&1; then
+                echo -e "  - 状态: $(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('status', 'unknown'))" 2>/dev/null || echo "未知")"
+
+                # 获取模型信息
+                MODEL=$(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('model', 'unknown'))" 2>/dev/null || echo "未知")
+                DEVICE=$(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('device', 'unknown'))" 2>/dev/null || echo "未知")
+                echo -e "  - 模型: $MODEL"
+                echo -e "  - 设备: $DEVICE"
+
+                # 获取并发信息
+                ACTIVE=$(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('active_transcriptions', 0))" 2>/dev/null || echo "0")
+                MAX_CONCURRENT=$(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('max_concurrent', 0))" 2>/dev/null || echo "0")
+                QUEUE_SIZE=$(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('queue_size', 0))" 2>/dev/null || echo "0")
+                echo -e "  - 活跃转写: $ACTIVE/$MAX_CONCURRENT"
+                echo -e "  - 队列大小: $QUEUE_SIZE"
+
+                # 获取工作进程数
+                WORKERS=$(curl -s "http://localhost:5000/api/health" 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('worker_count', 0))" 2>/dev/null || echo "0")
+                echo -e "  - 工作进程: $WORKERS"
+            fi
+        else
+            echo -e "✗ ${RED}服务端: 未运行${NC}"
+            # 清理无效的PID文件
+            rm -f "$SERVER_PID_FILE" 2>/dev/null || true
+        fi
     else
-        echo -e "✗ ${RED}服务端: 未运行${NC}"
+        # 备用检查：查找gunicorn进程
+        if pgrep -f "gunicorn.*transcription_server" >/dev/null 2>&1; then
+            echo -e "✓ ${GREEN}服务端: 运行中${NC}"
+        else
+            echo -e "✗ ${RED}服务端: 未运行${NC}"
+        fi
     fi
 
-    # 检查客户端服务状态
+    # 检查客户端进程状态
+    if pgrep -f "client.py" >/dev/null 2>&1; then
+        CLIENT_PID=$(pgrep -f "client.py" | head -1)
+        echo -e "✓ ${GREEN}客户端进程: 运行中${NC}"
+        echo -e "  - PID: $CLIENT_PID"
+
+        # 尝试获取快捷键信息
+        CLIENT_CMD=$(ps -p $CLIENT_PID -o args= 2>/dev/null)
+        if echo "$CLIENT_CMD" | grep -q "\-k"; then
+            HOTKEY=$(echo "$CLIENT_CMD" | grep -o '\-k[[:space:]]\+[^[:space:]]\+' | head -1 | sed 's/-k[[:space:]]*//')
+            echo -e "  - 快捷键: $HOTKEY"
+        fi
+    else
+        echo -e "✗ ${RED}客户端进程: 未运行${NC}"
+    fi
+
+    # 检查客户端服务状态（systemd服务）
     if systemctl list-unit-files | grep -q "autotranscription-client.service" 2>/dev/null; then
         if systemctl is-active --quiet "autotranscription-client" 2>/dev/null; then
             echo -e "✓ ${GREEN}客户端服务: 运行中${NC}"
@@ -234,12 +286,26 @@ start_system() {
     log_info "启动服务端..."
     "$PROJECT_DIR/scripts/start_server.sh" start
 
+    # 等待服务端完全启动
+    sleep 3
+
+    # 启动客户端（后台运行）
+    log_info "启动客户端..."
+    nohup "$PROJECT_DIR/scripts/start_client.sh" start > /dev/null 2>&1 &
+
+    # 等待客户端启动
+    sleep 2
+
     echo
     log_success "系统启动完成！"
     echo
     log_info "服务端地址: http://localhost:5000"
-    log_info "客户端启动: $SCRIPT_NAME client"
+    log_info "快捷键: 查看 config/client_config.json 中的 key_combo"
     log_info "查看状态: $SCRIPT_NAME status"
+    echo
+    log_info "客户端管理:"
+    echo "  $SCRIPT_NAME client           # 重新启动客户端"
+    echo "  $SCRIPT_NAME stop            # 停止整个系统"
     echo
     log_info "Conda环境: conda activate autotranscription"
 }
@@ -248,6 +314,10 @@ start_system() {
 stop_system() {
     show_banner
     log_step "停止AutoTranscription系统..."
+
+    # 停止客户端进程
+    log_info "停止客户端..."
+    pkill -f "client.py" || true
 
     # 停止服务端
     log_info "停止服务端..."
@@ -281,12 +351,9 @@ start_client() {
 
     # 检查服务端状态
     if ! "$PROJECT_DIR/scripts/start_server.sh" health >/dev/null 2>&1; then
-        log_warning "服务端未运行，是否启动服务端？"
-        read -p "启动服务端 [Y/n]: " -n 1 -r
+        log_warning "服务端未运行，客户端可能无法正常工作"
+        log_info "请先运行: $SCRIPT_NAME server start"
         echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            "$PROJECT_DIR/scripts/start_server.sh" start
-        fi
     fi
 
     # 启动客户端

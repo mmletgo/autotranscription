@@ -787,6 +787,85 @@ create_log_dir() {
     log_success "日志目录创建完成"
 }
 
+# 测试 GPU 转写功能
+test_gpu_transcription() {
+    log_info "测试 GPU 转写功能（包括 cuDNN 库路径）..."
+
+    # 设置 cuDNN 库路径
+    export LD_LIBRARY_PATH="$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+
+    python3 -c "
+import os
+import sys
+
+# 显示 cuDNN 库路径
+conda_prefix = os.environ.get('CONDA_PREFIX', '')
+cudnn_lib_path = os.path.join(conda_prefix, 'lib/python3.10/site-packages/nvidia/cudnn/lib')
+
+print(f'✓ Conda环境路径: {conda_prefix}')
+print(f'✓ cuDNN库路径: {cudnn_lib_path}')
+
+if os.path.exists(cudnn_lib_path):
+    print(f'✓ cuDNN库目录存在')
+    # 列出库文件
+    lib_files = [f for f in os.listdir(cudnn_lib_path) if f.startswith('libcudnn')]
+    if lib_files:
+        print(f'✓ 找到 {len(lib_files)} 个 cuDNN 库文件')
+    else:
+        print('✗ cuDNN库目录存在但没有库文件')
+        sys.exit(1)
+else:
+    print('✗ cuDNN库目录不存在')
+    sys.exit(1)
+
+# 测试 PyTorch CUDA
+import torch
+print(f'\\n✓ PyTorch版本: {torch.__version__}')
+print(f'✓ CUDA可用: {torch.cuda.is_available()}')
+
+if torch.cuda.is_available():
+    print(f'✓ CUDA设备: {torch.cuda.get_device_name(0)}')
+    print(f'✓ cuDNN版本: {torch.backends.cudnn.version()}')
+
+    # 测试 Whisper 模型加载
+    print(f'\\n正在测试 Whisper GPU 转写...')
+    try:
+        from faster_whisper import WhisperModel
+        import numpy as np
+
+        # 加载小模型进行测试
+        model = WhisperModel('base', device='cuda', compute_type='float16')
+        print('✓ Whisper 模型加载成功 (base + GPU)')
+
+        # 测试转写
+        test_audio = np.zeros(16000, dtype=np.float32)
+        segments, info = model.transcribe(test_audio, language='zh')
+        segment_list = list(segments)
+        print(f'✓ GPU 转写测试成功: {len(segment_list)} 个片段')
+        print(f'✓ 检测语言: {info.language}')
+
+        # 清理
+        del model
+        torch.cuda.empty_cache()
+
+        print('\\n🎉 GPU 转写功能完全正常！')
+    except Exception as e:
+        print(f'\\n✗ GPU 转写测试失败: {e}')
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+else:
+    print('⚠ CUDA不可用，将使用CPU模式')
+" || {
+        log_error "GPU 转写测试失败！"
+        log_warning "这通常是由于 cuDNN 库路径问题导致的"
+        log_info "启动脚本已配置好库路径，服务端应该可以正常运行"
+        return 1
+    }
+
+    log_success "GPU 转写功能测试通过！"
+}
+
 # 验证安装
 verify_installation() {
     local install_mode="${1:-full}"
@@ -804,15 +883,11 @@ verify_installation() {
     # 检查CUDA支持（仅在完整或服务端模式下）
     if [[ "$install_mode" == "full" ]] || [[ "$install_mode" == "server" ]]; then
         if [[ "$CUDA_AVAILABLE" == true ]]; then
-            python3 -c "
-import torch
-print(f'PyTorch版本: {torch.__version__}')
-print(f'CUDA可用: {torch.cuda.is_available()}')
-if torch.cuda.is_available():
-    print(f'CUDA设备数量: {torch.cuda.device_count()}')
-    print(f'CUDA当前设备: {torch.cuda.current_device()}')
-    print(f'CUDA设备名称: {torch.cuda.get_device_name()}')
-"
+            # 测试 GPU 转写功能（包括 cuDNN）
+            test_gpu_transcription || {
+                log_warning "GPU 转写测试未通过，但安装将继续"
+                log_info "如果遇到问题，请检查启动日志"
+            }
         fi
     fi
 
@@ -981,6 +1056,7 @@ show_post_install_info() {
             if [[ "$CUDA_AVAILABLE" == true ]]; then
                 echo "- GPU加速: 已启用 (CUDA $CUDA_VERSION)"
                 echo "- PyTorch: CUDA版本 (pip安装)"
+                echo "- cuDNN: 9.1 (自动配置库路径)"
             else
                 echo "- GPU加速: 未启用 (CPU模式)"
                 echo "- PyTorch: CPU版本 (pip安装)"
@@ -1015,6 +1091,13 @@ show_post_install_info() {
             echo "- 服务健康检查: ./scripts/manage.sh server health"
             echo "- 查看服务端状态: ./scripts/manage.sh server status"
             echo
+            if [[ "$CUDA_AVAILABLE" == true ]]; then
+                echo "CUDA/cuDNN 配置说明:"
+                echo "- cuDNN 库路径已在启动脚本中自动配置"
+                echo "- 如遇到 'libcudnn' 加载错误，检查日志: logs/transcription_server_error.log"
+                echo "- 启动脚本位置: scripts/start_server.sh (已包含 LD_LIBRARY_PATH 设置)"
+                echo
+            fi
             echo "如需重新安装，请运行:"
             echo "conda env remove -n autotranscription -y"
             echo "./scripts/manage.sh install"
@@ -1080,6 +1163,7 @@ show_post_install_info() {
             if [[ "$CUDA_AVAILABLE" == true ]]; then
                 echo "- GPU加速: 已启用 (CUDA $CUDA_VERSION)"
                 echo "- PyTorch: CUDA版本 (pip安装)"
+                echo "- cuDNN: 9.1 (自动配置库路径)"
             else
                 echo "- GPU加速: 未启用 (CPU模式)"
                 echo "- PyTorch: CPU版本 (pip安装)"
@@ -1117,6 +1201,13 @@ show_post_install_info() {
             echo "- Python包: pip (服务端核心功能包)"
             echo "- 安装策略: 高并发服务端安装"
             echo
+            if [[ "$CUDA_AVAILABLE" == true ]]; then
+                echo "CUDA/cuDNN 配置说明:"
+                echo "- cuDNN 库路径已在启动脚本中自动配置"
+                echo "- 如遇到 'libcudnn' 加载错误，检查日志: logs/transcription_server_error.log"
+                echo "- 启动脚本位置: scripts/start_server.sh (已包含 LD_LIBRARY_PATH 设置)"
+                echo
+            fi
             echo "🚀 高并发AI转写服务已准备就绪!"
             ;;
     esac

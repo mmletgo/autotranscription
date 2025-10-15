@@ -150,11 +150,14 @@ class SpeechTranscriberClient:
             except requests.exceptions.Timeout:
                 print("Request timeout, please check network or server status")
                 self.callback(segments=[])
-            except requests.exceptions.ConnectionError:
-                print("Cannot connect to server")
+            except requests.exceptions.ConnectionError as e:
+                print(f"Cannot connect to server: {e}")
+                print(f"Server URL: {self.server_url}/api/transcribe")
                 self.callback(segments=[])
             except Exception as e:
                 print(f"Error during transcription: {e}")
+                import traceback
+                traceback.print_exc()
                 self.callback(segments=[])
         else:
             self.callback(segments=[])
@@ -214,47 +217,96 @@ class Recorder:
         self.recording = False
 
     def _record_impl(self):
+        """Internal recording implementation with error handling"""
         self.recording = True
 
         frames_per_buffer = 1024
         sample_rate = 16000
-        p = pyaudio.PyAudio()
-        stream = p.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=sample_rate,
-            frames_per_buffer=frames_per_buffer,
-            input=True,
-        )
-        frames = []
+        p = None
+        stream = None
 
-        chunk_frames = []
-        frames_per_chunk = int(sample_rate * self.stream_interval / frames_per_buffer)
-        frame_count = 0
+        try:
+            print("Initializing audio stream...")
+            p = pyaudio.PyAudio()
 
-        while self.recording:
-            data = stream.read(frames_per_buffer)
-            frames.append(data)
+            # Get default input device info for debugging
+            try:
+                default_input = p.get_default_input_device_info()
+                print(f"Using audio device: {default_input['name']}")
+            except Exception as e:
+                print(f"Warning: Could not get default input device info: {e}")
 
-            if self.streaming_callback is not None:
-                chunk_frames.append(data)
-                frame_count += 1
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=sample_rate,
+                frames_per_buffer=frames_per_buffer,
+                input=True,
+            )
+            print("✓ Audio stream opened successfully")
 
-                if frame_count >= frames_per_chunk:
-                    audio_chunk = np.frombuffer(b"".join(chunk_frames), dtype=np.int16)
-                    audio_chunk_fp32 = audio_chunk.astype(np.float32) / 32768.0
-                    self.streaming_callback(audio=audio_chunk_fp32)
-                    chunk_frames = []
-                    frame_count = 0
+            frames = []
+            chunk_frames = []
+            frames_per_chunk = int(sample_rate * self.stream_interval / frames_per_buffer)
+            frame_count = 0
 
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+            print("Recording audio...")
+            while self.recording:
+                try:
+                    data = stream.read(frames_per_buffer, exception_on_overflow=False)
+                    frames.append(data)
 
-        audio_data = np.frombuffer(b"".join(frames), dtype=np.int16)
-        audio_data_fp32 = audio_data.astype(np.float32) / 32768.0
+                    if self.streaming_callback is not None:
+                        chunk_frames.append(data)
+                        frame_count += 1
 
-        self.callback(audio=audio_data_fp32)
+                        if frame_count >= frames_per_chunk:
+                            audio_chunk = np.frombuffer(b"".join(chunk_frames), dtype=np.int16)
+                            audio_chunk_fp32 = audio_chunk.astype(np.float32) / 32768.0
+                            self.streaming_callback(audio=audio_chunk_fp32)
+                            chunk_frames = []
+                            frame_count = 0
+                except Exception as e:
+                    print(f"Error reading audio frame: {e}")
+                    break
+
+            print(f"Recorded {len(frames)} frames ({len(frames) * frames_per_buffer / sample_rate:.2f}s)")
+
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
+            if p is not None:
+                p.terminate()
+
+            if len(frames) > 0:
+                audio_data = np.frombuffer(b"".join(frames), dtype=np.int16)
+                audio_data_fp32 = audio_data.astype(np.float32) / 32768.0
+                print(f"Audio data prepared: {len(audio_data_fp32)} samples")
+                self.callback(audio=audio_data_fp32)
+            else:
+                print("Warning: No audio data recorded")
+                self.callback(audio=np.array([], dtype=np.float32))
+
+        except Exception as e:
+            print(f"✗ Recording error: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Cleanup
+            if stream is not None:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except:
+                    pass
+            if p is not None:
+                try:
+                    p.terminate()
+                except:
+                    pass
+
+            # Still call callback with empty audio to continue state machine
+            self.callback(audio=np.array([], dtype=np.float32))
 
 
 class KeyboardReplayer:

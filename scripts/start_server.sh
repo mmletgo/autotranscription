@@ -277,10 +277,17 @@ cd "$PROJECT_DIR/server"
 # 导出Python路径以确保模块可用
 export PYTHONPATH="$PROJECT_DIR/server:$PYTHONPATH"
 
+# 设置 cuDNN 库路径（修复 CUDA 问题）
+CUDNN_LIB_PATH="\$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/cudnn/lib"
+if [ -d "\$CUDNN_LIB_PATH" ]; then
+    export LD_LIBRARY_PATH="\$CUDNN_LIB_PATH:\$LD_LIBRARY_PATH"
+fi
+
 exec gunicorn \\
     --bind "$HOST:$PORT" \\
     --workers "$WORKERS" \\
-    --worker-class gevent \\
+    --worker-class sync \\
+    --threads 4 \\
     --timeout "$TIMEOUT" \\
     --max-requests 1000 \\
     --max-requests-jitter 100 \\
@@ -300,8 +307,16 @@ EOF
     # 清理临时脚本
     rm -f /tmp/start_server.sh
 
-    # 等待服务启动
-    sleep 3
+    # 等待PID文件创建（最多30秒）
+    local wait_count=0
+    local max_wait=30
+    while [[ ! -f "$PID_FILE" ]] && [[ $wait_count -lt $max_wait ]]; do
+        sleep 1
+        ((wait_count++))
+    done
+
+    # 再等待1秒确保进程完全启动
+    sleep 1
 
     if check_status; then
         log_success "高并发服务启动成功"
@@ -389,6 +404,13 @@ show_config() {
 
 # 显示状态信息
 show_status() {
+    # 加载配置以获取端口等信息
+    if [[ -f "$CONFIG_FILE" ]]; then
+        PORT=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['port'])" 2>/dev/null || echo 5000)
+    else
+        PORT=5000
+    fi
+
     echo "AutoTranscription 服务状态"
     echo "=========================="
 

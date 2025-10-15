@@ -15,9 +15,9 @@ NC='\033[0m' # No Color
 # 配置变量
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_NAME="$(basename "$0")"
-CONFIG_FILE="$PROJECT/config/client_config.json"
+CONFIG_FILE="$PROJECT_DIR/config/client_config.json"
 CONDA_ENV_NAME="autotranscription"
-LOG_FILE="$PROJECT/logs/client.log"
+LOG_FILE="$PROJECT_DIR/logs/client.log"
 
 # 日志函数
 log_info() {
@@ -165,11 +165,11 @@ start_client() {
     client_args="$client_args -s $SERVER_URL"
 
     # 添加快捷键参数
-    client_args="$client_args -k \"$HOTKEY\""
+    client_args="$client_args -k $HOTKEY"
 
     # 添加其他参数
     client_args="$client_args --max-time $MAX_TIME"
-    client_args="$client_args --zh-conversion $ZH_CONVERT"
+    client_args="$client_args --zh-convert $ZH_CONVERT"
 
     if [[ "$STREAMING" == "true" ]]; then
         client_args="$client_args --streaming"
@@ -179,10 +179,11 @@ start_client() {
     cd "$PROJECT_DIR/client"
 
     # 启动客户端
-    log_info "执行: python3 client.py $client_args"
+    log_info "执行: python3 -u client.py $client_args"
 
     # 使用tee命令同时输出到控制台和日志文件
-    python3 client.py $client_args 2>&1 | tee -a "$LOG_FILE"
+    # -u 参数禁用输出缓冲，确保实时显示日志
+    python3 -u client.py $client_args 2>&1 | tee -a "$LOG_FILE"
 }
 
 # 显示配置
