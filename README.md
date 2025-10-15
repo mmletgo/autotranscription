@@ -1,5 +1,7 @@
 # AutoTranscription 语音转文字系统
 
+中文文档 | [English](README_EN.md)
+
 基于 Faster Whisper 的高并发客户端-服务器架构语音转文字系统，支持 GPU 加速和生产环境部署。
 
 ## 特性
