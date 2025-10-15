@@ -2,6 +2,20 @@
 
 [中文文档](README.md) | English
 
+## Core Value
+
+**Accelerate AI Conversations - Replace Typing with Voice**
+
+This project aims to solve a real pain point: **Speaking is always faster than typing when conversing with AI**. Especially when using programming AI tools like Claude Code, ChatGPT, or Cursor, you frequently need to describe requirements, explain problems, and discuss solutions. Traditional typing is not only slow but also interrupts your train of thought.
+
+With hotkey-triggered recording + AI speech recognition, you can:
+- **Boost Communication Efficiency**: Voice input is 3-5x faster than typing
+- **Maintain Flow of Thought**: Speak as you think, without being limited by typing speed
+- **Reduce Hand Strain**: After long coding sessions, using voice instead of typing relieves hand fatigue
+- **Focus on Core Issues**: Spend time thinking and solving problems, not typing
+
+---
+
 High-concurrency client-server architecture speech-to-text system based on Faster Whisper, supporting GPU acceleration and production environment deployment.
 
 ## Features
