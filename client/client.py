@@ -40,15 +40,25 @@ else:
     import sounddevice
 
     sounddevice.default.samplerate = 44100
+    _audio_device = None  # Will be set from config
 
     def playsound(s, wait=True):
-        sounddevice.play(s)
+        # s is a tuple of (data, samplerate)
+        if isinstance(s, tuple):
+            data, fs = s
+            sounddevice.play(data, fs, device=_audio_device)
+        else:
+            sounddevice.play(s, device=_audio_device)
         if wait:
             sounddevice.wait()
 
     def loadwav(filename):
         data, fs = sf.read(filename, dtype="float32")
-        return data
+        return (data, fs)  # Return both data and sample rate
+
+    def set_audio_device(device_id):
+        global _audio_device
+        _audio_device = device_id
 
 
 class SpeechTranscriberClient:
@@ -465,6 +475,23 @@ def parse_args():
         choices=["none", "t2s", "s2t"],
         help="Chinese conversion: t2s(traditional to simplified), s2t(simplified to traditional), none(disable)",
     )
+    parser.add_argument(
+        "--audio-device",
+        type=int,
+        default=config.get("audio_device"),
+        help="Audio output device ID (use sounddevice.query_devices() to list)",
+    )
+    parser.add_argument(
+        "--enable-beep",
+        action="store_true",
+        default=config.get("enable_beep", True),
+        help="Enable beep sounds",
+    )
+    parser.add_argument(
+        "--list-audio-devices",
+        action="store_true",
+        help="List available audio devices and exit",
+    )
 
     args = parser.parse_args()
     return args
@@ -508,6 +535,17 @@ class App:
 
         self.m = m
         self.args = args
+        self.enable_beep = args.enable_beep
+
+        # Set audio output device if specified
+        if platform.system() != "Windows" and args.audio_device is not None:
+            try:
+                import sounddevice
+                set_audio_device(args.audio_device)
+                device_info = sounddevice.query_devices(args.audio_device)
+                print(f"Using audio device {args.audio_device}: {device_info['name']}")
+            except Exception as e:
+                print(f"Warning: Failed to set audio device {args.audio_device}: {e}")
 
         # Set initial prompt
         initial_prompt = args.initial_prompt
@@ -585,7 +623,11 @@ class App:
         pass
 
     def beep(self, k, wait=True):
-        playsound(self.SOUND_EFFECTS[k], wait=wait)
+        if self.enable_beep:
+            try:
+                playsound(self.SOUND_EFFECTS[k], wait=wait)
+            except Exception as e:
+                print(f"Warning: Failed to play beep sound: {e}")
 
     def start(self):
         if self.m.is_READY():
@@ -640,4 +682,19 @@ class App:
 
 if __name__ == "__main__":
     args = parse_args()
+
+    # List audio devices if requested
+    if args.list_audio_devices:
+        if platform.system() == "Windows":
+            print("Audio device listing is not supported on Windows")
+        else:
+            import sounddevice as sd
+            print("=== Available Audio Devices ===")
+            devices = sd.query_devices()
+            for i, device in enumerate(devices):
+                if device['max_output_channels'] > 0:
+                    marker = " (default)" if i == sd.default.device[1] else ""
+                    print(f"{i}: {device['name']} - {device['max_output_channels']} output channels{marker}")
+        exit(0)
+
     App(args).run()

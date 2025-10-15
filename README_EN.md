@@ -462,9 +462,85 @@ tail -f logs/client.log
     "streaming": true,                      // Streaming output
     "key_combo": "<alt>",                   // Hotkey combination
     "sample_rate": 16000,                   // Sample rate
-    "channels": 1                           // Number of channels
+    "channels": 1,                          // Number of channels
+    "audio_device": null,                   // Audio output device ID (null=default)
+    "enable_beep": false                    // Enable beep sounds
 }
 ```
+
+### Audio Device Configuration
+
+The client supports playing beep sounds when recording starts/stops. Due to varying audio device configurations across different systems, manual configuration of the audio output device may be required.
+
+#### Testing and Configuring Audio Devices
+
+If you want to enable the beep sound feature, follow these steps:
+
+1. **Run the audio device test script**
+   ```bash
+   ./scripts/test_audio.sh
+   ```
+
+2. **Test Process**
+   - The script will list all available audio output devices
+   - It will play test sounds to each device sequentially
+   - When you hear the sound, enter `y` to confirm
+   - Enter `n` to skip the current device
+   - Enter `r` to replay the test sound for the current device
+
+3. **Automatic Configuration**
+   - After finding a working device, the script will automatically display configuration instructions
+   - You can directly edit `config/client_config.json` to apply the configuration
+
+4. **Manual Configuration Example**
+   ```json
+   {
+       "audio_device": 5,      // Set to the working device ID
+       "enable_beep": true     // Enable beep sounds
+   }
+   ```
+
+5. **Disable Beep Sounds**
+
+   If you don't need the beep sound feature, you can disable it in the configuration:
+   ```json
+   {
+       "enable_beep": false    // Disable beep sounds (default)
+   }
+   ```
+
+#### Command Line Options
+
+You can also specify the audio device via command line parameters:
+
+```bash
+# List all audio output devices
+python3 client/client.py --list-audio-devices
+
+# Start with specified audio device
+python3 client/client.py --audio-device 5
+
+# Enable beep sounds
+python3 client/client.py --enable-beep
+```
+
+#### Audio Device Troubleshooting
+
+**Issue: Cannot hear beep sounds**
+- Run `./scripts/test_audio.sh` to find the correct audio device
+- Check system volume settings
+- Ensure audio output device is not muted
+- Try different device IDs
+
+**Issue: Test script cannot recognize input**
+- Ensure you run the script in an interactive terminal
+- Wait for the prompt to appear before entering
+- Use the direct Python script: `python3 scripts/test_audio_devices.py`
+
+**Issue: Audio device list is empty**
+- Check if system audio drivers are working properly
+- Confirm that an audio output device (speakers/headphones) is connected
+- Check system audio settings
 
 ## API Interface
 

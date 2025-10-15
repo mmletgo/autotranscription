@@ -462,9 +462,85 @@ tail -f logs/client.log
     "streaming": true,                      // 流式输出
     "key_combo": "<alt>",                   // 快捷键组合
     "sample_rate": 16000,                   // 采样率
-    "channels": 1                           // 声道数
+    "channels": 1,                          // 声道数
+    "audio_device": null,                   // 音频输出设备ID (null=默认)
+    "enable_beep": false                    // 启用提示音
 }
 ```
+
+### 音频设备配置
+
+客户端支持在录音开始/结束时播放提示音。由于不同系统的音频设备配置各异，可能需要手动配置音频输出设备。
+
+#### 测试和配置音频设备
+
+如果您希望启用提示音功能，请按以下步骤配置：
+
+1. **运行音频设备测试脚本**
+   ```bash
+   ./scripts/test_audio.sh
+   ```
+
+2. **测试流程**
+   - 脚本会列出所有可用的音频输出设备
+   - 依次播放测试音到每个设备
+   - 当您听到声音时，输入 `y` 确认
+   - 输入 `n` 跳过当前设备
+   - 输入 `r` 重新播放当前设备的测试音
+
+3. **自动配置**
+   - 找到工作的设备后，脚本会自动显示配置方法
+   - 您可以直接编辑 `config/client_config.json` 应用配置
+
+4. **手动配置示例**
+   ```json
+   {
+       "audio_device": 5,      // 设置为工作的设备ID
+       "enable_beep": true     // 启用提示音
+   }
+   ```
+
+5. **禁用提示音**
+
+   如果不需要提示音功能，可以在配置中禁用：
+   ```json
+   {
+       "enable_beep": false    // 禁用提示音（默认）
+   }
+   ```
+
+#### 命令行选项
+
+也可以通过命令行参数指定音频设备：
+
+```bash
+# 列出所有音频输出设备
+python3 client/client.py --list-audio-devices
+
+# 使用指定的音频设备启动
+python3 client/client.py --audio-device 5
+
+# 启用提示音
+python3 client/client.py --enable-beep
+```
+
+#### 音频设备故障排除
+
+**问题：听不到提示音**
+- 运行 `./scripts/test_audio.sh` 找到正确的音频设备
+- 检查系统音量设置
+- 确认音频输出设备没有被静音
+- 尝试不同的设备ID
+
+**问题：测试脚本无法识别输入**
+- 确保在交互式终端中运行脚本
+- 等待提示符出现后再输入
+- 使用直接的 Python 脚本：`python3 scripts/test_audio_devices.py`
+
+**问题：音频设备列表为空**
+- 检查系统音频驱动是否正常
+- 确认已连接音频输出设备（扬声器/耳机）
+- 查看系统音频设置
 
 ## API 接口
 
