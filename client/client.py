@@ -19,6 +19,9 @@ import requests
 import json
 import os
 
+# 导入音频工具模块
+from audio_utils import get_audio_config_manager, initialize_audio_config
+
 try:
     from opencc import OpenCC
 except Exception:
@@ -38,14 +41,36 @@ if platform.system() == "Windows":
 else:
     import soundfile as sf
     import sounddevice
+    import numpy as np
+    from scipy import signal  # 用于音频重采样
 
-    sounddevice.default.samplerate = 44100
     _audio_device = None  # Will be set from config
+    _audio_output_rate = None  # Will be set by audio config manager
+
+    def resample_audio(data, orig_sr, target_sr):
+        """音频重采样函数"""
+        if orig_sr == target_sr:
+            return data
+
+        # 计算重采样比例
+        resample_ratio = target_sr / orig_sr
+        num_samples = int(len(data) * resample_ratio)
+
+        # 使用scipy进行重采样
+        resampled_data = signal.resample(data, num_samples)
+        return resampled_data.astype(data.dtype)
 
     def playsound(s, wait=True):
         # s is a tuple of (data, samplerate)
         if isinstance(s, tuple):
             data, fs = s
+
+            # 如果音频采样率与输出采样率不匹配，进行重采样
+            if _audio_output_rate and fs != _audio_output_rate:
+                print(f"音频重采样: {fs}Hz -> {_audio_output_rate}Hz")
+                data = resample_audio(data, fs, _audio_output_rate)
+                fs = _audio_output_rate
+
             sounddevice.play(data, fs, device=_audio_device)
         else:
             sounddevice.play(s, device=_audio_device)
@@ -59,6 +84,15 @@ else:
     def set_audio_device(device_id):
         global _audio_device
         _audio_device = device_id
+
+    def set_audio_output_rate(rate):
+        """设置音频输出采样率"""
+        global _audio_output_rate
+        _audio_output_rate = rate
+        try:
+            sounddevice.default.samplerate = rate
+        except Exception as e:
+            print(f"设置默认输出采样率失败: {e}")
 
 
 class SpeechTranscriberClient:
@@ -220,6 +254,8 @@ class Recorder:
         self.streaming_callback = streaming_callback
         self.recording = False
         self.stream_interval = 1.0
+        # 获取音频配置管理器
+        self.audio_config = get_audio_config_manager()
 
     def start(self, language=None):
         print("Recording started...")
@@ -235,18 +271,19 @@ class Recorder:
         self.recording = True
 
         frames_per_buffer = 1024
-        sample_rate = 16000
+        # 使用动态检测的最佳输入采样率
+        sample_rate = self.audio_config.get_optimal_input_rate()
         p = None
         stream = None
 
         try:
-            print("Initializing audio stream...")
+            print(f"正在使用自动检测的采样率: {sample_rate} Hz 初始化音频流...")
             p = pyaudio.PyAudio()
 
             # Get default input device info for debugging
             try:
                 default_input = p.get_default_input_device_info()
-                print(f"Using audio device: {default_input['name']}")
+                print(f"使用音频设备: {default_input['name']}")
             except Exception as e:
                 print(f"Warning: Could not get default input device info: {e}")
 
@@ -257,7 +294,7 @@ class Recorder:
                 frames_per_buffer=frames_per_buffer,
                 input=True,
             )
-            print("✓ Audio stream opened successfully")
+            print("✓ 音频流成功打开")
 
             frames = []
             chunk_frames = []
@@ -496,6 +533,11 @@ def parse_args():
         action="store_true",
         help="List available audio devices and exit",
     )
+    parser.add_argument(
+        "--test-audio-config",
+        action="store_true",
+        help="Test audio configuration and auto-detect optimal sample rates",
+    )
 
     args = parser.parse_args()
     return args
@@ -541,13 +583,32 @@ class App:
         self.args = args
         self.enable_beep = args.enable_beep
 
+        # 初始化音频配置 - 自动检测最佳采样率
+        print("正在初始化音频配置...")
+        try:
+            input_rate, output_rate = initialize_audio_config(
+                input_device=None,  # 使用默认输入设备
+                output_device=args.audio_device if platform.system() != "Windows" else None,
+                preferred_input_rate=16000,  # 语音识别偏好采样率
+                preferred_output_rate=44100  # 播放偏好采样率
+            )
+            print(f"✓ 音频配置初始化完成: 输入={input_rate}Hz, 输出={output_rate}Hz")
+
+            # 设置Linux系统的音频输出采样率
+            if platform.system() != "Windows":
+                set_audio_output_rate(output_rate)
+
+        except Exception as e:
+            print(f"⚠ 音频配置初始化失败，使用默认配置: {e}")
+            print("将使用固定采样率: 输入=16000Hz, 输出=44100Hz")
+
         # Set audio output device if specified
         if platform.system() != "Windows" and args.audio_device is not None:
             try:
                 import sounddevice
                 set_audio_device(args.audio_device)
                 device_info = sounddevice.query_devices(args.audio_device)
-                print(f"Using audio device {args.audio_device}: {device_info['name']}")
+                print(f"使用音频设备 {args.audio_device}: {device_info['name']}")
             except Exception as e:
                 print(f"Warning: Failed to set audio device {args.audio_device}: {e}")
 
@@ -686,6 +747,32 @@ class App:
 
 if __name__ == "__main__":
     args = parse_args()
+
+    # Test audio configuration if requested
+    if args.test_audio_config:
+        print("=== 音频配置测试 ===")
+        try:
+            from audio_utils import AudioConfigManager
+            config_manager = AudioConfigManager()
+
+            # 初始化配置（包含设备测试）
+            input_rate, output_rate = config_manager.initialize(
+                input_device=None,
+                output_device=args.audio_device if platform.system() != "Windows" else None,
+                preferred_input_rate=16000,
+                preferred_output_rate=44100
+            )
+
+            print(f"\n检测结果:")
+            print(f"✓ 最佳输入采样率: {input_rate} Hz")
+            print(f"✓ 最佳输出采样率: {output_rate} Hz")
+            print("✓ 音频设备测试已在初始化过程中完成")
+
+        except Exception as e:
+            print(f"✗ 音频配置测试失败: {e}")
+            import traceback
+            traceback.print_exc()
+        exit(0)
 
     # List audio devices if requested
     if args.list_audio_devices:
