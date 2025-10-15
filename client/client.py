@@ -99,14 +99,27 @@ class SpeechTranscriberClient:
     """Speech transcription client - calls remote API"""
 
     def __init__(
-        self, callback, server_url, language=None, initial_prompt=None, streaming=False
+        self, callback, server_url, language=None, initial_prompt=None, streaming=False, replayer=None
     ):
         self.callback = callback
         self.server_url = server_url.rstrip("/")
         self.language = language
         self.initial_prompt = initial_prompt
         self.streaming = streaming
+        self.replayer = replayer  # For live streaming output
         self.session = requests.Session()
+
+        # For deduplication of streaming results
+        self.last_transcribed_text = ""
+        self.cumulative_text = ""
+
+        # Hallucination patterns to filter out
+        self.hallucination_patterns = [
+            "字幕", "志愿者", "翻译", "制作", "感谢观看",
+            "订阅", "点赞", "关注", "频道", "转载",
+            "请不要", "谢谢", "www.", "http", ".com",
+            "下载", "更多", "音乐", "MV", "official"
+        ]
 
         # Disable proxy for LAN connections to avoid proxy interference
         # This is especially important when connecting to local servers like 192.168.x.x
@@ -163,13 +176,20 @@ class SpeechTranscriberClient:
                         # Convert to segment objects similar to local model
                         segments = []
                         for seg_data in result.get("segments", []):
+                            seg_text = seg_data["text"].strip()
+
+                            # Skip hallucination segments in final transcription
+                            if self.streaming and self._is_hallucination(seg_text):
+                                print(f"[Filter] Skipping hallucination segment: {seg_text}")
+                                continue
+
                             segment = type(
                                 "Segment",
                                 (),
                                 {
                                     "start": seg_data["start"],
                                     "end": seg_data["end"],
-                                    "text": seg_data["text"],
+                                    "text": seg_text,
                                 },
                             )()
                             segments.append(segment)
@@ -181,11 +201,9 @@ class SpeechTranscriberClient:
 
                         # Handle streaming or non-streaming output
                         if self.streaming:
-                            for segment in segments:
-                                self.callback(
-                                    segments=[segment], streaming=True, final=False
-                                )
-                            self.callback(segments=[], streaming=True, final=True)
+                            # Pass all segments with streaming flag
+                            # The replayer will handle outputting them one by one
+                            self.callback(segments=segments, streaming=True)
                         else:
                             self.callback(segments=segments)
                     else:
@@ -245,6 +263,141 @@ class SpeechTranscriberClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def transcribe_chunk_live(self, audio):
+        """Transcribe audio chunk during recording (live streaming mode)"""
+        if not self.streaming or not self.replayer:
+            return
+
+        # Check if audio has sufficient energy (not silence)
+        audio_energy = np.abs(audio).mean()
+        if audio_energy < 0.01:  # Very low energy, likely silence
+            print("[Live] Skipping chunk (silence detected)")
+            return
+
+        print("[Live] Transcribing audio chunk...")
+
+        try:
+            # Prepare request data
+            request_data = {
+                "audio_data": audio.tolist(),
+                "sample_rate": 16000,
+                "streaming": False,  # Server doesn't need to know about client streaming
+            }
+
+            if self.language:
+                request_data["language"] = self.language
+
+            # Use cumulative text as context for better accuracy
+            if self.cumulative_text:
+                request_data["initial_prompt"] = self.cumulative_text[-200:]  # Last 200 chars as context
+            elif self.initial_prompt:
+                request_data["initial_prompt"] = self.initial_prompt
+
+            # Send request to server
+            response = self.session.post(
+                f"{self.server_url}/api/transcribe", json=request_data, timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+
+                if result.get("success"):
+                    # Get full transcription text
+                    current_text = result.get("text", "").strip()
+
+                    if not current_text:
+                        return
+
+                    print(f"[Live] Raw result: {current_text}")
+
+                    # Filter hallucinations
+                    if self._is_hallucination(current_text):
+                        print(f"[Filter] Skipping hallucination: {current_text}")
+                        return
+
+                    # Deduplicate: find new content by comparing with cumulative text
+                    new_text = self._extract_new_content(current_text)
+
+                    if new_text and not self._is_hallucination(new_text):
+                        print(f"[Live] New content: {new_text}")
+
+                        # Update cumulative text
+                        self.cumulative_text = (self.cumulative_text + " " + new_text).strip()
+
+                        # Create segment for new text only
+                        segment = type(
+                            "Segment",
+                            (),
+                            {
+                                "start": 0,
+                                "end": 0,
+                                "text": new_text,
+                            },
+                        )()
+
+                        # Output new content immediately
+                        fake_event = type("Event", (), {"kwargs": {"segments": [segment], "streaming": True, "live": True}})()
+                        self.replayer.replay(fake_event)
+                    else:
+                        print("[Live] No new content (duplicate or overlap)")
+
+        except requests.exceptions.Timeout:
+            print("[Live] Transcription timeout (chunk skipped)")
+        except Exception as e:
+            print(f"[Live] Transcription error: {e}")
+
+    def _is_hallucination(self, text):
+        """Check if text contains common hallucination patterns"""
+        if not text or len(text.strip()) < 2:
+            return True
+
+        # Check for hallucination keywords
+        for pattern in self.hallucination_patterns:
+            if pattern in text:
+                print(f"[Filter] Detected hallucination pattern: '{pattern}' in '{text}'")
+                return True
+
+        # Check if text is suspiciously short after long silence
+        if len(text.strip()) < 3:
+            return True
+
+        return False
+
+    def _extract_new_content(self, current_text):
+        """Extract new content by comparing with cumulative text"""
+        if not self.cumulative_text:
+            return current_text
+
+        # Simple approach: check if current text starts with end of cumulative text
+        # Find the longest common suffix of cumulative_text that is a prefix of current_text
+        cumulative_words = self.cumulative_text.split()
+        current_words = current_text.split()
+
+        # Try to find overlap
+        max_overlap = min(len(cumulative_words), len(current_words))
+        overlap_length = 0
+
+        for i in range(1, max_overlap + 1):
+            # Check if last i words of cumulative match first i words of current
+            if cumulative_words[-i:] == current_words[:i]:
+                overlap_length = i
+
+        # Extract new words (skip overlapping words)
+        if overlap_length > 0:
+            new_words = current_words[overlap_length:]
+        else:
+            # No overlap found - check if cumulative is substring of current
+            if self.cumulative_text in current_text:
+                # Current contains cumulative, extract the rest
+                idx = current_text.find(self.cumulative_text)
+                new_text = current_text[idx + len(self.cumulative_text):].strip()
+                return new_text
+            else:
+                # No clear relationship, output all
+                new_words = current_words
+
+        return " ".join(new_words).strip()
+
 
 class Recorder:
     """Audio recorder"""
@@ -253,12 +406,17 @@ class Recorder:
         self.callback = callback
         self.streaming_callback = streaming_callback
         self.recording = False
-        self.stream_interval = 1.0
+        self.stream_interval = 3.0  # Increased from 1.0 to 3.0 seconds for better accuracy
+        self.overlap_duration = 0.5  # Keep 0.5s overlap with previous chunk for context
         # 获取音频配置管理器
         self.audio_config = get_audio_config_manager()
+        # Store previous chunk for overlap
+        self.previous_chunk_frames = []
 
     def start(self, language=None):
         print("Recording started...")
+        # Reset previous chunk buffer for new recording session
+        self.previous_chunk_frames = []
         thread = threading.Thread(target=self._record_impl, args=())
         thread.start()
 
@@ -299,6 +457,7 @@ class Recorder:
             frames = []
             chunk_frames = []
             frames_per_chunk = int(sample_rate * self.stream_interval / frames_per_buffer)
+            frames_for_overlap = int(sample_rate * self.overlap_duration / frames_per_buffer)
             frame_count = 0
 
             print("Recording audio...")
@@ -312,9 +471,17 @@ class Recorder:
                         frame_count += 1
 
                         if frame_count >= frames_per_chunk:
-                            audio_chunk = np.frombuffer(b"".join(chunk_frames), dtype=np.int16)
+                            # Combine overlap from previous chunk with current chunk
+                            combined_frames = self.previous_chunk_frames + chunk_frames
+                            audio_chunk = np.frombuffer(b"".join(combined_frames), dtype=np.int16)
                             audio_chunk_fp32 = audio_chunk.astype(np.float32) / 32768.0
+
+                            # Send for transcription
                             self.streaming_callback(audio=audio_chunk_fp32)
+
+                            # Keep last frames_for_overlap frames for next chunk's context
+                            self.previous_chunk_frames = chunk_frames[-frames_for_overlap:] if len(chunk_frames) >= frames_for_overlap else chunk_frames
+
                             chunk_frames = []
                             frame_count = 0
                 except Exception as e:
@@ -375,11 +542,15 @@ class KeyboardReplayer:
         is_live = event.kwargs.get("live", False)
 
         if is_streaming:
+            # Streaming mode: output segments one by one in real-time
             if is_live:
+                # Live streaming during recording: output immediately, no callback
                 self._type_segments(segments, streaming=True)
-            elif not is_final:
-                self._type_segments(segments, streaming=True)
+                # Don't call callback - we're still recording
             else:
+                # Standard streaming mode: output all segments one by one after recording
+                print("Streaming output: typing segments one by one...")
+                self._type_segments(segments, streaming=True)
                 print("Streaming transcription completed.")
                 self.callback()
         else:
@@ -612,24 +783,16 @@ class App:
             except Exception as e:
                 print(f"Warning: Failed to set audio device {args.audio_device}: {e}")
 
-        # Set initial prompt
+        # Set initial prompt - use strong prompt to reduce hallucinations
         initial_prompt = args.initial_prompt
         if initial_prompt is None and args.language == "zh":
-            initial_prompt = "以下是普通话的句子。"
-            print("Using default Chinese initial prompt to improve punctuation")
+            # Use a prompt that discourages common hallucinations
+            initial_prompt = "这是一段真实的语音对话内容。"
+            print("Using anti-hallucination Chinese initial prompt")
 
         streaming = args.streaming
         if streaming:
             print("Streaming mode enabled - will input text in real-time!")
-
-        # Initialize transcription client (connect to server)
-        self.transcriber = SpeechTranscriberClient(
-            m.finish_transcribing,
-            args.server_url,
-            args.language,
-            initial_prompt,
-            streaming,
-        )
 
         # Initialize Chinese converter
         converter = None
@@ -645,23 +808,33 @@ class App:
                 except Exception as e:
                     print(f"OpenCC initialization failed ('{args.zh_convert}'): {e}")
 
+        # Initialize replayer first (needed by transcriber for live streaming)
         self.replayer = KeyboardReplayer(m.finish_replaying, converter=converter)
 
-        # Initialize recorder
-        if streaming:
+        # Initialize transcription client (connect to server)
+        self.transcriber = SpeechTranscriberClient(
+            m.finish_transcribing,
+            args.server_url,
+            args.language,
+            initial_prompt,
+            streaming,
+            replayer=self.replayer if streaming else None,
+        )
 
-            def streaming_transcribe_callback(audio):
-                """Real-time transcription callback during recording"""
+        # Initialize recorder with live streaming support
+        if streaming:
+            def live_transcribe_callback(audio):
+                """Live transcription callback during recording"""
+                # Run in separate thread to avoid blocking recording
                 thread = threading.Thread(
-                    target=self.transcriber.transcribe,
-                    args=(type("Event", (), {"kwargs": {"audio": audio}})(),),
+                    target=self.transcriber.transcribe_chunk_live,
+                    args=(audio,),
                 )
                 thread.daemon = True
                 thread.start()
 
-            self.recorder = Recorder(
-                m.finish_streaming, streaming_callback=streaming_transcribe_callback
-            )
+            self.recorder = Recorder(m.finish_recording, streaming_callback=live_transcribe_callback)
+            print("✓ Live streaming transcription enabled")
         else:
             self.recorder = Recorder(m.finish_recording)
 
@@ -681,6 +854,10 @@ class App:
 
     def _on_start_recording(self, event):
         """Called when recording starts"""
+        # Reset cumulative text for new recording session
+        if self.args.streaming:
+            self.transcriber.cumulative_text = ""
+            self.transcriber.last_transcribed_text = ""
         self.recorder.start()
 
     def _on_stop_recording(self, event):
