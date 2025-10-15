@@ -757,9 +757,17 @@ autotranscription/
    3. 使用 `./scripts/manage.sh restart` 重启服务测试
    4. 通过监控功能验证性能影响
 
+## 致谢
+
+本项目的设计思路受到 [faster-whisper-dictation](https://github.com/doctorguile/faster-whisper-dictation) 项目的启发，感谢该项目为语音转文字领域提供的优秀实现参考。
+
 ## 许可证
 
-本项目基于 MIT 许可证开源。
+本项目基于 [MIT 许可证](LICENSE) 开源。
+
+Copyright (c) 2025 AutoTranscription Contributors
+
+您可以自由地使用、复制、修改、合并、发布、分发、再许可和/或销售本软件的副本。详细信息请参阅 [LICENSE](LICENSE) 文件。
 
 ## 支持
 
