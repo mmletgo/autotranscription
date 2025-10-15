@@ -42,13 +42,13 @@ log_step() {
 show_banner() {
     echo -e "${CYAN}"
     cat << "EOF"
- _____                         _
-|  __ \                       | |
-| |  | | ___   _ __ ___   __ _| |_ ___  _ __
-| |  | |/ _ \ | '_ ` _ \ / _` | __/ _ \| '__|
-| |__| | (_) || | | | | | (_| | || (_) | |
-|_____/ \___/ |_| |_| |_|\__,_|\__\___/|_|
-              TRANSCRIPTION SYSTEM
+              _        _
+  __ _ _   _| |_ ___ | |_ _ __ __ _ _ __  ___
+ / _` | | | | __/ _ \| __| '__/ _` | '_ \/ __|
+| (_| | |_| | || (_) | |_| | | (_| | | | \__ \
+ \__,_|\__,_|\__\___/ \__|_|  \__,_|_| |_|___/
+
+         AI TRANSCRIPTION SYSTEM
 EOF
     echo -e "${NC}"
 }
@@ -351,8 +351,8 @@ start_client() {
 
     # 检查服务端状态
     if ! "$PROJECT_DIR/scripts/start_server.sh" health >/dev/null 2>&1; then
-        log_warning "服务端未运行，客户端可能无法正常工作"
-        log_info "请先运行: $SCRIPT_NAME server start"
+        log_warning "服务端如果未运行，客户端可能无法正常工作"
+        log_info "如果单机模式，请先运行: $SCRIPT_NAME server start"
         echo
     fi
 
