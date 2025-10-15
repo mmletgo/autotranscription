@@ -226,6 +226,351 @@ cd autotranscription
 
 > **注意**: 所有安装模式都会自动检测并安装 Miniconda 和 CUDA Toolkit（服务端需要），无需手动配置。
 
+### Windows 环境安装指南
+
+Windows 用户有两种安装方式,推荐使用 WSL 方式以获得最佳体验:
+
+#### 方式一:使用 WSL (推荐)
+
+WSL 允许您在 Windows 上运行完整的 Linux 环境,可以直接使用项目的 bash 脚本。
+
+**1. 安装 WSL**
+```powershell
+# 在 PowerShell (管理员) 中运行
+wsl --install -d Ubuntu-22.04
+```
+
+**2. 重启计算机并配置 Ubuntu**
+- 设置用户名和密码
+- 更新系统: `sudo apt update && sudo apt upgrade`
+
+**3. 在 WSL 中安装项目**
+```bash
+# 克隆项目
+git clone <repository-url>
+cd autotranscription
+
+# 安装系统依赖 (仅首次需要)
+sudo apt install -y build-essential portaudio19-dev
+
+# 选择安装模式
+./scripts/manage.sh install         # 完整安装
+# 或
+./scripts/manage.sh install-client  # 仅客户端
+# 或
+./scripts/manage.sh install-server  # 仅服务端
+```
+
+**4. GPU 支持 (可选)**
+
+如果您的 Windows 有 NVIDIA GPU 并希望使用 GPU 加速:
+```bash
+# 确保 Windows 上安装了最新的 NVIDIA 驱动
+# WSL2 会自动访问 Windows 的 GPU
+
+# 检查 GPU 可用性
+nvidia-smi
+```
+
+**5. 启动服务**
+```bash
+# 启动完整系统
+./scripts/manage.sh start
+
+# 或分别启动
+./scripts/manage.sh server start  # 启动服务端
+./scripts/manage.sh client        # 启动客户端
+```
+
+**注意事项**:
+- WSL 客户端的热键监听在 Linux 环境中工作,不能直接监听 Windows 全局热键
+- 如需在 Windows 应用中使用,建议服务端运行在 WSL,客户端使用原生 Windows 安装
+- WSL2 性能优于 WSL1,建议使用 WSL2
+
+#### 方式二:原生 Windows 安装
+
+如果不想使用 WSL,可以直接在 Windows 上安装:
+
+**1. 安装 Miniconda**
+- 下载: https://docs.conda.io/en/latest/miniconda.html
+- 选择 Windows 64-bit 安装包
+- 安装时勾选 "Add Miniconda3 to PATH"
+
+**2. 安装 Git (如果尚未安装)**
+- 下载: https://git-scm.com/download/win
+- 使用默认设置安装
+
+**3. 克隆项目**
+```cmd
+git clone <repository-url>
+cd autotranscription
+```
+
+**4. 创建 Conda 环境**
+```cmd
+# 打开 Anaconda Prompt 或 PowerShell
+conda create -n autotranscription python=3.10 -y
+conda activate autotranscription
+```
+
+**5. 安装依赖**
+
+**仅客户端安装** (推荐用于普通用户):
+```cmd
+# 安装客户端依赖
+pip install -r client/requirements.txt
+
+# 安装 PyAudio (Windows 需要特殊处理)
+pip install pipwin
+pipwin install pyaudio
+```
+
+**完整安装或仅服务端** (需要 GPU):
+```cmd
+# 安装 CUDA Toolkit (GPU 模式)
+# 从 NVIDIA 官网下载并安装 CUDA 11.8+: https://developer.nvidia.com/cuda-downloads
+
+# 安装服务端依赖
+pip install -r server/requirements.txt
+
+# 安装客户端依赖 (如果需要)
+pip install -r client/requirements.txt
+pip install pipwin
+pipwin install pyaudio
+```
+
+**6. 配置文件**
+
+复制配置文件模板 (如果不存在):
+```cmd
+# PowerShell
+if (!(Test-Path "config\server_config.json")) {
+    Copy-Item "config\server_config.example.json" "config\server_config.json"
+}
+if (!(Test-Path "config\client_config.json")) {
+    Copy-Item "config\client_config.example.json" "config\client_config.json"
+}
+```
+
+或手动复制 `config/*.example.json` 文件,去掉 `.example` 后缀。
+
+**7. 启动服务**
+
+**启动服务端**:
+```cmd
+conda activate autotranscription
+python server/transcription_server.py
+```
+
+**启动客户端** (新开一个终端):
+```cmd
+conda activate autotranscription
+python client/client.py
+```
+
+**8. Windows 防火墙配置**
+
+首次运行时,Windows 防火墙可能会询问是否允许网络访问,请选择"允许访问"。
+
+如需手动配置:
+```powershell
+# PowerShell (管理员)
+New-NetFirewallRule -DisplayName "AutoTranscription Server" -Direction Inbound -Protocol TCP -LocalPort 5000 -Action Allow
+```
+
+#### 使用 Windows 管理脚本 (推荐)
+
+为了简化 Windows 环境的管理,我们提供了完整的批处理脚本,类似于 Linux/macOS 的 bash 脚本:
+
+**主管理脚本** (`scripts\windows\manage.bat`):
+```cmd
+REM 系统安装
+scripts\windows\manage.bat install         # 安装完整系统依赖
+scripts\windows\manage.bat install-client  # 仅安装客户端依赖
+scripts\windows\manage.bat install-server  # 仅安装服务端依赖
+
+REM 系统管理
+scripts\windows\manage.bat start           # 启动完整系统
+scripts\windows\manage.bat stop            # 停止系统
+scripts\windows\manage.bat restart         # 重启系统
+scripts\windows\manage.bat status          # 查看系统状态
+
+REM 服务端管理
+scripts\windows\manage.bat server start    # 启动服务端
+scripts\windows\manage.bat server stop     # 停止服务端
+scripts\windows\manage.bat server status   # 查看服务端状态
+scripts\windows\manage.bat server logs     # 查看服务端日志
+scripts\windows\manage.bat server health   # 健康检查
+
+REM 客户端管理
+scripts\windows\manage.bat client          # 启动客户端
+
+REM 系统维护
+scripts\windows\manage.bat clean           # 清理系统 (保留配置)
+scripts\windows\manage.bat reset           # 完全重置系统
+```
+
+**依赖安装脚本** (`scripts\windows\install_deps.bat`):
+```cmd
+REM 直接使用安装脚本
+scripts\windows\install_deps.bat full      # 安装完整系统
+scripts\windows\install_deps.bat client    # 仅安装客户端
+scripts\windows\install_deps.bat server    # 仅安装服务端
+scripts\windows\install_deps.bat --help    # 查看帮助信息
+```
+
+**服务端脚本** (`scripts\windows\start_server.bat`):
+```cmd
+scripts\windows\start_server.bat start     # 启动服务端
+scripts\windows\start_server.bat stop      # 停止服务端
+scripts\windows\start_server.bat restart   # 重启服务端
+scripts\windows\start_server.bat status    # 查看状态
+scripts\windows\start_server.bat logs      # 查看日志
+scripts\windows\start_server.bat health    # 健康检查
+scripts\windows\start_server.bat config    # 显示配置
+```
+
+**客户端脚本** (`scripts\windows\start_client.bat`):
+```cmd
+REM 基本使用
+scripts\windows\start_client.bat start     # 启动客户端
+scripts\windows\start_client.bat check     # 检查服务连接
+scripts\windows\start_client.bat config    # 显示配置
+
+REM 环境变量覆盖
+set SERVER_URL=http://192.168.1.100:5000
+scripts\windows\start_client.bat start
+```
+
+**使用示例**:
+
+1. **一键安装完整系统**:
+```cmd
+REM 在项目根目录打开 CMD 或 PowerShell
+scripts\windows\manage.bat install
+```
+
+2. **启动系统**:
+```cmd
+scripts\windows\manage.bat start
+```
+
+3. **查看系统状态**:
+```cmd
+scripts\windows\manage.bat status
+```
+
+4. **仅安装和使用客户端**:
+```cmd
+REM 安装客户端依赖
+scripts\windows\manage.bat install-client
+
+REM 配置服务端地址 (编辑 config\client_config.json)
+REM "server_url": "http://192.168.1.100:5000"
+
+REM 启动客户端
+scripts\windows\manage.bat client
+```
+
+**脚本特点**:
+- ✅ 自动检测和配置 Conda 环境
+- ✅ 自动检测 CUDA 和 GPU
+- ✅ 智能依赖安装 (使用 pipwin 处理 PyAudio)
+- ✅ 完整的进程管理 (启动/停止/重启/状态)
+- ✅ 日志管理和查看
+- ✅ 健康检查和诊断
+- ✅ 与 Linux/macOS 脚本功能一致
+
+#### Windows 客户端服务 (开机自启)
+
+Windows 客户端可以使用 NSSM 注册为系统服务:
+
+**1. 下载 NSSM**
+- 下载: https://nssm.cc/download
+- 解压到 `C:\Tools\nssm` 或任意目录
+- 将路径添加到系统 PATH
+
+**2. 安装服务**
+```cmd
+# 打开 CMD (管理员)
+cd C:\path\to\autotranscription
+
+# 注册服务
+nssm install AutoTranscription-Client "%USERPROFILE%\miniconda3\envs\autotranscription\python.exe" "client\client.py"
+
+# 设置工作目录
+nssm set AutoTranscription-Client AppDirectory "C:\path\to\autotranscription"
+
+# 启动服务
+nssm start AutoTranscription-Client
+```
+
+**3. 管理服务**
+```cmd
+# 查看状态
+nssm status AutoTranscription-Client
+
+# 停止服务
+nssm stop AutoTranscription-Client
+
+# 重启服务
+nssm restart AutoTranscription-Client
+
+# 卸载服务
+nssm remove AutoTranscription-Client confirm
+```
+
+#### Windows 常见问题
+
+**1. PyAudio 安装失败**
+```cmd
+# 方法1: 使用 pipwin
+pip install pipwin
+pipwin install pyaudio
+
+# 方法2: 下载预编译 wheel 文件
+# 访问 https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+# 下载对应 Python 版本的 .whl 文件
+pip install PyAudio-0.2.11-cp310-cp310-win_amd64.whl
+```
+
+**2. CUDA 不可用**
+```cmd
+# 检查 CUDA 安装
+nvcc --version
+
+# 检查 GPU
+nvidia-smi
+
+# 如果没有 GPU,编辑 config/server_config.json:
+# "device": "cpu"
+```
+
+**3. 热键不工作**
+- 确保以管理员权限运行客户端
+- 检查是否有其他程序占用了相同的热键
+- 尝试更改 `config/client_config.json` 中的 `key_combo`
+
+**4. 模块导入错误**
+```cmd
+# 确保激活了正确的 conda 环境
+conda activate autotranscription
+
+# 重新安装依赖
+pip install -r client/requirements.txt --force-reinstall
+```
+
+**5. 编码问题**
+- 确保所有配置文件使用 UTF-8 编码
+- PowerShell 中可以设置: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+
+#### Windows 性能建议
+
+- **客户端**: 可以在任何 Windows 设备上运行,资源占用低
+- **服务端**: 建议部署在有 NVIDIA GPU 的 Windows 工作站或服务器上
+- **混合部署**: 服务端在 WSL 或 Linux 服务器,客户端使用原生 Windows
+- **网络**: 确保服务端和客户端在同一局域网,或配置正确的网络路由
+
 ### 手动安装
 
 如果自动安装脚本遇到问题，或者您希望了解安装过程，请参考 [手动安装教程](docs/MANUAL_INSTALL.md) 获取详细的分步安装指南。

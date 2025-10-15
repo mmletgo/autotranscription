@@ -226,6 +226,351 @@ You can also use the `install_deps.sh` script directly:
 
 > **Note**: All installation modes will automatically detect and install Miniconda and CUDA Toolkit (required for server), no manual configuration needed.
 
+### Windows Installation Guide
+
+Windows users have two installation methods, WSL is recommended for the best experience:
+
+#### Method 1: Using WSL (Recommended)
+
+WSL allows you to run a complete Linux environment on Windows, enabling direct use of the project's bash scripts.
+
+**1. Install WSL**
+```powershell
+# Run in PowerShell (Administrator)
+wsl --install -d Ubuntu-22.04
+```
+
+**2. Restart Computer and Configure Ubuntu**
+- Set username and password
+- Update system: `sudo apt update && sudo apt upgrade`
+
+**3. Install Project in WSL**
+```bash
+# Clone the project
+git clone <repository-url>
+cd autotranscription
+
+# Install system dependencies (first time only)
+sudo apt install -y build-essential portaudio19-dev
+
+# Choose installation mode
+./scripts/manage.sh install         # Full installation
+# Or
+./scripts/manage.sh install-client  # Client only
+# Or
+./scripts/manage.sh install-server  # Server only
+```
+
+**4. GPU Support (Optional)**
+
+If your Windows has an NVIDIA GPU and you want to use GPU acceleration:
+```bash
+# Ensure the latest NVIDIA driver is installed on Windows
+# WSL2 will automatically access Windows GPU
+
+# Check GPU availability
+nvidia-smi
+```
+
+**5. Start Services**
+```bash
+# Start complete system
+./scripts/manage.sh start
+
+# Or start separately
+./scripts/manage.sh server start  # Start server
+./scripts/manage.sh client        # Start client
+```
+
+**Notes**:
+- WSL client hotkey listening works in the Linux environment, cannot directly monitor Windows global hotkeys
+- For use in Windows applications, recommend running server in WSL and client using native Windows installation
+- WSL2 performance is better than WSL1, WSL2 is recommended
+
+#### Method 2: Native Windows Installation
+
+If you don't want to use WSL, you can install directly on Windows:
+
+**1. Install Miniconda**
+- Download: https://docs.conda.io/en/latest/miniconda.html
+- Select Windows 64-bit installer
+- Check "Add Miniconda3 to PATH" during installation
+
+**2. Install Git (if not already installed)**
+- Download: https://git-scm.com/download/win
+- Install using default settings
+
+**3. Clone Project**
+```cmd
+git clone <repository-url>
+cd autotranscription
+```
+
+**4. Create Conda Environment**
+```cmd
+# Open Anaconda Prompt or PowerShell
+conda create -n autotranscription python=3.10 -y
+conda activate autotranscription
+```
+
+**5. Install Dependencies**
+
+**Client Only Installation** (recommended for regular users):
+```cmd
+# Install client dependencies
+pip install -r client/requirements.txt
+
+# Install PyAudio (Windows requires special handling)
+pip install pipwin
+pipwin install pyaudio
+```
+
+**Full or Server Only Installation** (requires GPU):
+```cmd
+# Install CUDA Toolkit (GPU mode)
+# Download and install CUDA 11.8+ from NVIDIA: https://developer.nvidia.com/cuda-downloads
+
+# Install server dependencies
+pip install -r server/requirements.txt
+
+# Install client dependencies (if needed)
+pip install -r client/requirements.txt
+pip install pipwin
+pipwin install pyaudio
+```
+
+**6. Configuration Files**
+
+Copy configuration file templates (if they don't exist):
+```cmd
+# PowerShell
+if (!(Test-Path "config\server_config.json")) {
+    Copy-Item "config\server_config.example.json" "config\server_config.json"
+}
+if (!(Test-Path "config\client_config.json")) {
+    Copy-Item "config\client_config.example.json" "config\client_config.json"
+}
+```
+
+Or manually copy `config/*.example.json` files and remove the `.example` suffix.
+
+**7. Start Services**
+
+**Start Server**:
+```cmd
+conda activate autotranscription
+python server/transcription_server.py
+```
+
+**Start Client** (open a new terminal):
+```cmd
+conda activate autotranscription
+python client/client.py
+```
+
+**8. Windows Firewall Configuration**
+
+When running for the first time, Windows Firewall may ask whether to allow network access, please select "Allow Access".
+
+To configure manually:
+```powershell
+# PowerShell (Administrator)
+New-NetFirewallRule -DisplayName "AutoTranscription Server" -Direction Inbound -Protocol TCP -LocalPort 5000 -Action Allow
+```
+
+#### Using Windows Management Scripts (Recommended)
+
+To simplify Windows environment management, we provide complete batch scripts, similar to Linux/macOS bash scripts:
+
+**Main Management Script** (`scripts\windows\manage.bat`):
+```cmd
+REM System Installation
+scripts\windows\manage.bat install         # Install complete system dependencies
+scripts\windows\manage.bat install-client  # Install client dependencies only
+scripts\windows\manage.bat install-server  # Install server dependencies only
+
+REM System Management
+scripts\windows\manage.bat start           # Start complete system
+scripts\windows\manage.bat stop            # Stop system
+scripts\windows\manage.bat restart         # Restart system
+scripts\windows\manage.bat status          # View system status
+
+REM Server Management
+scripts\windows\manage.bat server start    # Start server
+scripts\windows\manage.bat server stop     # Stop server
+scripts\windows\manage.bat server status   # View server status
+scripts\windows\manage.bat server logs     # View server logs
+scripts\windows\manage.bat server health   # Health check
+
+REM Client Management
+scripts\windows\manage.bat client          # Start client
+
+REM System Maintenance
+scripts\windows\manage.bat clean           # Clean system (keep configuration)
+scripts\windows\manage.bat reset           # Complete system reset
+```
+
+**Dependency Installation Script** (`scripts\windows\install_deps.bat`):
+```cmd
+REM Direct installation script usage
+scripts\windows\install_deps.bat full      # Install complete system
+scripts\windows\install_deps.bat client    # Install client only
+scripts\windows\install_deps.bat server    # Install server only
+scripts\windows\install_deps.bat --help    # View help information
+```
+
+**Server Script** (`scripts\windows\start_server.bat`):
+```cmd
+scripts\windows\start_server.bat start     # Start server
+scripts\windows\start_server.bat stop      # Stop server
+scripts\windows\start_server.bat restart   # Restart server
+scripts\windows\start_server.bat status    # View status
+scripts\windows\start_server.bat logs      # View logs
+scripts\windows\start_server.bat health    # Health check
+scripts\windows\start_server.bat config    # Show configuration
+```
+
+**Client Script** (`scripts\windows\start_client.bat`):
+```cmd
+REM Basic usage
+scripts\windows\start_client.bat start     # Start client
+scripts\windows\start_client.bat check     # Check server connection
+scripts\windows\start_client.bat config    # Show configuration
+
+REM Environment variable override
+set SERVER_URL=http://192.168.1.100:5000
+scripts\windows\start_client.bat start
+```
+
+**Usage Examples**:
+
+1. **One-click install complete system**:
+```cmd
+REM Open CMD or PowerShell in project root directory
+scripts\windows\manage.bat install
+```
+
+2. **Start system**:
+```cmd
+scripts\windows\manage.bat start
+```
+
+3. **View system status**:
+```cmd
+scripts\windows\manage.bat status
+```
+
+4. **Install and use client only**:
+```cmd
+REM Install client dependencies
+scripts\windows\manage.bat install-client
+
+REM Configure server address (edit config\client_config.json)
+REM "server_url": "http://192.168.1.100:5000"
+
+REM Start client
+scripts\windows\manage.bat client
+```
+
+**Script Features**:
+- ✅ Auto-detect and configure Conda environment
+- ✅ Auto-detect CUDA and GPU
+- ✅ Smart dependency installation (uses pipwin for PyAudio)
+- ✅ Complete process management (start/stop/restart/status)
+- ✅ Log management and viewing
+- ✅ Health check and diagnostics
+- ✅ Consistent functionality with Linux/macOS scripts
+
+#### Windows Client Service (Auto-start on Boot)
+
+The Windows client can be registered as a system service using NSSM:
+
+**1. Download NSSM**
+- Download: https://nssm.cc/download
+- Extract to `C:\Tools\nssm` or any directory
+- Add path to system PATH
+
+**2. Install Service**
+```cmd
+# Open CMD (Administrator)
+cd C:\path\to\autotranscription
+
+# Register service
+nssm install AutoTranscription-Client "%USERPROFILE%\miniconda3\envs\autotranscription\python.exe" "client\client.py"
+
+# Set working directory
+nssm set AutoTranscription-Client AppDirectory "C:\path\to\autotranscription"
+
+# Start service
+nssm start AutoTranscription-Client
+```
+
+**3. Manage Service**
+```cmd
+# View status
+nssm status AutoTranscription-Client
+
+# Stop service
+nssm stop AutoTranscription-Client
+
+# Restart service
+nssm restart AutoTranscription-Client
+
+# Uninstall service
+nssm remove AutoTranscription-Client confirm
+```
+
+#### Windows Common Issues
+
+**1. PyAudio Installation Failure**
+```cmd
+# Method 1: Use pipwin
+pip install pipwin
+pipwin install pyaudio
+
+# Method 2: Download precompiled wheel file
+# Visit https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+# Download .whl file for your Python version
+pip install PyAudio-0.2.11-cp310-cp310-win_amd64.whl
+```
+
+**2. CUDA Unavailable**
+```cmd
+# Check CUDA installation
+nvcc --version
+
+# Check GPU
+nvidia-smi
+
+# If no GPU, edit config/server_config.json:
+# "device": "cpu"
+```
+
+**3. Hotkey Not Working**
+- Ensure client runs with administrator privileges
+- Check if other programs are using the same hotkey
+- Try changing `key_combo` in `config/client_config.json`
+
+**4. Module Import Error**
+```cmd
+# Ensure correct conda environment is activated
+conda activate autotranscription
+
+# Reinstall dependencies
+pip install -r client/requirements.txt --force-reinstall
+```
+
+**5. Encoding Issues**
+- Ensure all configuration files use UTF-8 encoding
+- In PowerShell: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+
+#### Windows Performance Recommendations
+
+- **Client**: Can run on any Windows device with low resource consumption
+- **Server**: Recommended for deployment on Windows workstations or servers with NVIDIA GPU
+- **Hybrid Deployment**: Server in WSL or Linux server, client using native Windows
+- **Network**: Ensure server and client are on the same LAN, or configure correct network routing
+
 ### Manual Installation
 
 If the automatic installation script encounters issues, or if you want to understand the installation process, please refer to the [Manual Installation Guide](docs/MANUAL_INSTALL.md) for detailed step-by-step installation instructions.
