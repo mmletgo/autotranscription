@@ -92,6 +92,10 @@ check_environment() {
     # 创建日志目录
     mkdir -p "$(dirname "$LOG_FILE")"
 
+    # 禁用conda AAU分析以避免token写入错误
+    export CONDA_REPORT_ERRORS=false
+    export AAU_ANALYTICS_ENABLED=false
+
     # 激活conda环境
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda activate "$CONDA_ENV_NAME"
@@ -108,11 +112,61 @@ check_environment() {
 # 加载配置
 load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
-        SERVER_URL=${SERVER_URL:-$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['server_url'])" 2>/dev/null || echo "http://localhost:5000")}
-        HOTKEY=${HOTKEY:-$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['key_combo'])" 2>/dev/null || echo "<alt>")}
-        MAX_TIME=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['max_time'])" 2>/dev/null || echo 30)
-        ZH_CONVERT=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['zh_convert'])" 2>/dev/null || echo "none")
-        STREAMING=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['streaming'])" 2>/dev/null || echo "true")
+        # 尝试使用python3解析配置，如果失败则使用默认值
+        if command -v python3 &> /dev/null; then
+            SERVER_URL=${SERVER_URL:-$(python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE', 'r') as f:
+        data = json.load(f)
+        print(data.get('server_url', 'http://localhost:5000'))
+except:
+    print('http://localhost:5000')
+" 2>/dev/null || echo "http://localhost:5000")}
+            HOTKEY=${HOTKEY:-$(python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE', 'r') as f:
+        data = json.load(f)
+        print(data.get('key_combo', '<alt>'))
+except:
+    print('<alt>')
+" 2>/dev/null || echo "<alt>")}
+            MAX_TIME=$(python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE', 'r') as f:
+        data = json.load(f)
+        print(data.get('max_time', 30))
+except:
+    print(30)
+" 2>/dev/null || echo 30)
+            ZH_CONVERT=$(python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE', 'r') as f:
+        data = json.load(f)
+        print(data.get('zh_convert', 'none'))
+except:
+    print('none')
+" 2>/dev/null || echo "none")
+            STREAMING=$(python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE', 'r') as f:
+        data = json.load(f)
+        print('true' if data.get('streaming', True) else 'false')
+except:
+    print('true')
+" 2>/dev/null || echo "true")
+        else
+            # 如果python3不可用，使用默认值
+            SERVER_URL="http://localhost:5000"
+            HOTKEY="<alt>"
+            MAX_TIME=30
+            ZH_CONVERT="none"
+            STREAMING="true"
+        fi
     else
         # 默认配置
         SERVER_URL="http://localhost:5000"
@@ -130,7 +184,11 @@ check_connection() {
     log_info "检查服务端连接: $SERVER_URL"
 
     # 检查服务是否可达 (禁用代理以支持局域网连接)
-    if curl -s -f --noproxy '*' "$SERVER_URL/api/health" > /dev/null 2>&1; then
+    # 保存原始PATH，在conda环境激活前使用
+    local original_path="$PATH"
+    local curl_cmd="curl"
+
+    if $curl_cmd -s -f --noproxy '*' "$SERVER_URL/api/health" > /dev/null 2>&1; then
         log_success "服务端连接正常"
         return 0
     else
@@ -144,14 +202,17 @@ check_connection() {
 start_client() {
     log_info "启动AutoTranscription客户端..."
 
-    check_environment
+    # 先加载配置（不需要conda环境）
     load_config
 
-    # 检查服务端连接
+    # 在激活conda环境前检查服务端连接
     if ! check_connection; then
         log_error "服务端连接失败，无法启动客户端"
         exit 1
     fi
+
+    # 检查和激活conda环境
+    check_environment
 
     log_info "启动客户端..."
     log_info "服务端地址: $SERVER_URL"
@@ -224,7 +285,6 @@ main() {
             start_client
             ;;
         "check")
-            check_environment
             load_config
             check_connection
             ;;

@@ -488,12 +488,18 @@ The client supports playing beep sounds when recording starts/stops. Due to vary
 
 #### Testing and Configuring Audio Devices
 
-If you want to enable the beep sound feature, follow these steps:
+To ensure beep sounds play properly when pressing hotkeys, you need to determine the correct audio device configuration:
 
 1. **Run the audio device test script**
    ```bash
    ./scripts/test_audio.sh
    ```
+
+   This script will help you:
+   - List all available audio output devices
+   - Test playback on each device sequentially
+   - Find the device ID that can play beep sounds correctly
+   - Provide configuration suggestions and instructions
 
 2. **Test Process**
    - The script will list all available audio output devices
@@ -730,6 +736,9 @@ sudo firewall-cmd --reload
 
 6. **Client Connection to Server Failed**
    ```bash
+   # Run connection diagnostic script
+   ./scripts/diagnose_client_connection.sh
+
    # Check server status
    ./scripts/manage.sh server status
 
@@ -740,6 +749,33 @@ sudo firewall-cmd --reload
    nano config/client_config.json
    # Update server_url to correct server address
    ```
+
+### Diagnostic Tools
+
+To help users quickly troubleshoot and resolve connection issues, the system provides dedicated diagnostic scripts:
+
+#### Connection Diagnostic Script (`./scripts/diagnose_client_connection.sh`)
+
+This script is used to diagnose connection issues between the client and server, including network connectivity, port reachability, proxy settings, and API connection testing.
+
+**Usage**:
+```bash
+./scripts/diagnose_client_connection.sh
+```
+
+**Diagnostic Contents**:
+- Network connectivity check
+- Port reachability test
+- Proxy settings detection
+- Server API connection verification
+- Configuration file validation
+- Common issue troubleshooting suggestions
+
+**Applicable Scenarios**:
+- Unable to connect to server
+- Transcription requests failing
+- Network configuration troubleshooting
+- LAN/Internet connection configuration verification
 
 ### Log File Locations
 

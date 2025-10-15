@@ -488,12 +488,18 @@ tail -f logs/client.log
 
 #### 测试和配置音频设备
 
-如果您希望启用提示音功能，请按以下步骤配置：
+为了确保快捷键按下时能正常播放提示音，您需要先确定正确的音频设备配置：
 
 1. **运行音频设备测试脚本**
    ```bash
    ./scripts/test_audio.sh
    ```
+
+   该脚本会帮助您：
+   - 列出所有可用的音频输出设备
+   - 依次测试每个设备的播放效果
+   - 找到能正常播放提示音的设备ID
+   - 提供配置建议和说明
 
 2. **测试流程**
    - 脚本会列出所有可用的音频输出设备
@@ -730,6 +736,9 @@ sudo firewall-cmd --reload
 
 6. **客户端连接服务端失败**
    ```bash
+   # 运行连接诊断脚本
+   ./scripts/diagnose_client_connection.sh
+
    # 检查服务端状态
    ./scripts/manage.sh server status
 
@@ -740,6 +749,33 @@ sudo firewall-cmd --reload
    nano config/client_config.json
    # 更新 server_url 为正确的服务端地址
    ```
+
+### 诊断工具
+
+为了帮助用户快速排查和解决连接问题，系统提供了专门的诊断脚本：
+
+#### 连接诊断脚本 (`./scripts/diagnose_client_connection.sh`)
+
+该脚本用于诊断客户端与服务端之间的连接问题，包括网络连通性、端口可达性、代理设置和API连接测试。
+
+**使用方法**：
+```bash
+./scripts/diagnose_client_connection.sh
+```
+
+**诊断内容**：
+- 网络连通性检查
+- 端口可达性测试
+- 代理设置检测
+- 服务端API连接验证
+- 配置文件验证
+- 常见问题排查建议
+
+**适用场景**：
+- 无法连接到服务端
+- 转录请求失败
+- 网络配置问题排查
+- 局域网/互联网连接配置验证
 
 ### 日志文件位置
 

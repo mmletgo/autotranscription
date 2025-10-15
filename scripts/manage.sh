@@ -349,10 +349,15 @@ start_client() {
         exit 1
     fi
 
-    # 检查服务端状态
-    if ! "$PROJECT_DIR/scripts/start_server.sh" health >/dev/null 2>&1; then
+    # 禁用conda AAU分析以避免token写入错误
+    export CONDA_REPORT_ERRORS=false
+    export AAU_ANALYTICS_ENABLED=false
+
+    # 检查服务端连接状态（使用客户端的连接检查）
+    if ! "$PROJECT_DIR/scripts/start_client.sh" check >/dev/null 2>&1; then
         log_warning "服务端如果未运行，客户端可能无法正常工作"
         log_info "如果单机模式，请先运行: $SCRIPT_NAME server start"
+        log_info "如果是远程服务端，请检查 config/client_config.json 中的 server_url 配置"
         echo
     fi
 
