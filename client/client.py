@@ -74,6 +74,10 @@ class SpeechTranscriberClient:
         self.streaming = streaming
         self.session = requests.Session()
 
+        # Disable proxy for LAN connections to avoid proxy interference
+        # This is especially important when connecting to local servers like 192.168.x.x
+        self.session.trust_env = False
+
         # Test server connection
         self._test_connection()
 

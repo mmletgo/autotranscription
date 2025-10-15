@@ -129,8 +129,8 @@ load_config() {
 check_connection() {
     log_info "检查服务端连接: $SERVER_URL"
 
-    # 检查服务是否可达
-    if curl -s -f "$SERVER_URL/api/health" > /dev/null 2>&1; then
+    # 检查服务是否可达 (禁用代理以支持局域网连接)
+    if curl -s -f --noproxy '*' "$SERVER_URL/api/health" > /dev/null 2>&1; then
         log_success "服务端连接正常"
         return 0
     else
