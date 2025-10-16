@@ -622,7 +622,15 @@ nvidia-smi
 - 检查是否有其他程序占用了相同的热键
 - 尝试更改 `config/client_config.json` 中的 `key_combo`
 
-**4. 模块导入错误**
+**4. Windows 快捷键需要双击**
+- 在 Windows 系统上,由于 `pynput` 库的热键监听机制,快捷键需要 **连按两次** 才能触发操作
+- 这是已知的行为特性,不是故障
+- **操作方式**:
+  - 连按两次快捷键 → 开始录音
+  - 连按两次快捷键 → 停止录音
+- 如果希望改善体验,可以尝试使用组合键(如 `<ctrl>+<alt>+a`)代替单键
+
+**5. 模块导入错误**
 ```cmd
 # 确保激活了正确的 conda 环境
 conda activate autotranscription
@@ -631,7 +639,7 @@ conda activate autotranscription
 pip install -r client/requirements.txt --force-reinstall
 ```
 
-**5. 编码问题**
+**6. 编码问题**
 - 确保所有配置文件使用 UTF-8 编码
 - PowerShell 中可以设置: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
 

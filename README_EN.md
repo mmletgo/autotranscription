@@ -622,7 +622,15 @@ nvidia-smi
 - Check if other programs are using the same hotkey
 - Try changing `key_combo` in `config/client_config.json`
 
-**4. Module Import Error**
+**4. Windows Hotkey Requires Double Press**
+- On Windows systems, due to the `pynput` library's hotkey listening mechanism, the hotkey needs to be **pressed twice** to trigger an operation
+- This is a known behavior characteristic, not a malfunction
+- **Operation method**:
+  - Press hotkey twice → Start recording
+  - Press hotkey twice → Stop recording
+- If you want to improve the experience, try using combination keys (e.g., `<ctrl>+<alt>+a`) instead of single keys
+
+**5. Module Import Error**
 ```cmd
 # Ensure correct conda environment is activated
 conda activate autotranscription
@@ -631,7 +639,7 @@ conda activate autotranscription
 pip install -r client/requirements.txt --force-reinstall
 ```
 
-**5. Encoding Issues**
+**6. Encoding Issues**
 - Ensure all configuration files use UTF-8 encoding
 - In PowerShell: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
 
