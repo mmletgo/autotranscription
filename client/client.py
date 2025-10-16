@@ -99,7 +99,13 @@ class SpeechTranscriberClient:
     """Speech transcription client - calls remote API"""
 
     def __init__(
-        self, callback, server_url, language=None, initial_prompt=None, streaming=False, replayer=None
+        self,
+        callback,
+        server_url,
+        language=None,
+        initial_prompt=None,
+        streaming=False,
+        replayer=None,
     ):
         self.callback = callback
         self.server_url = server_url.rstrip("/")
@@ -115,10 +121,26 @@ class SpeechTranscriberClient:
 
         # Hallucination patterns to filter out
         self.hallucination_patterns = [
-            "字幕", "志愿者", "翻译", "制作", "感谢观看",
-            "订阅", "点赞", "关注", "频道", "转载",
-            "请不要", "谢谢", "www.", "http", ".com",
-            "下载", "更多", "音乐", "MV", "official"
+            "字幕",
+            "志愿者",
+            "翻译",
+            "制作",
+            "感谢观看",
+            "订阅",
+            "点赞",
+            "关注",
+            "频道",
+            "转载",
+            "请不要",
+            "谢谢",
+            "www.",
+            "http",
+            ".com",
+            "下载",
+            "更多",
+            "音乐",
+            "MV",
+            "official",
         ]
 
         # Disable proxy for LAN connections to avoid proxy interference
@@ -180,7 +202,9 @@ class SpeechTranscriberClient:
 
                             # Skip hallucination segments in final transcription
                             if self.streaming and self._is_hallucination(seg_text):
-                                print(f"[Filter] Skipping hallucination segment: {seg_text}")
+                                print(
+                                    f"[Filter] Skipping hallucination segment: {seg_text}"
+                                )
                                 continue
 
                             segment = type(
@@ -223,6 +247,7 @@ class SpeechTranscriberClient:
             except Exception as e:
                 print(f"Error during transcription: {e}")
                 import traceback
+
                 traceback.print_exc()
                 self.callback(segments=[])
         else:
@@ -289,7 +314,9 @@ class SpeechTranscriberClient:
 
             # Use cumulative text as context for better accuracy
             if self.cumulative_text:
-                request_data["initial_prompt"] = self.cumulative_text[-200:]  # Last 200 chars as context
+                request_data["initial_prompt"] = self.cumulative_text[
+                    -200:
+                ]  # Last 200 chars as context
             elif self.initial_prompt:
                 request_data["initial_prompt"] = self.initial_prompt
 
@@ -322,7 +349,9 @@ class SpeechTranscriberClient:
                         print(f"[Live] New content: {new_text}")
 
                         # Update cumulative text
-                        self.cumulative_text = (self.cumulative_text + " " + new_text).strip()
+                        self.cumulative_text = (
+                            self.cumulative_text + " " + new_text
+                        ).strip()
 
                         # Create segment for new text only
                         segment = type(
@@ -336,7 +365,17 @@ class SpeechTranscriberClient:
                         )()
 
                         # Output new content immediately
-                        fake_event = type("Event", (), {"kwargs": {"segments": [segment], "streaming": True, "live": True}})()
+                        fake_event = type(
+                            "Event",
+                            (),
+                            {
+                                "kwargs": {
+                                    "segments": [segment],
+                                    "streaming": True,
+                                    "live": True,
+                                }
+                            },
+                        )()
                         self.replayer.replay(fake_event)
                     else:
                         print("[Live] No new content (duplicate or overlap)")
@@ -354,7 +393,9 @@ class SpeechTranscriberClient:
         # Check for hallucination keywords
         for pattern in self.hallucination_patterns:
             if pattern in text:
-                print(f"[Filter] Detected hallucination pattern: '{pattern}' in '{text}'")
+                print(
+                    f"[Filter] Detected hallucination pattern: '{pattern}' in '{text}'"
+                )
                 return True
 
         # Check if text is suspiciously short after long silence
@@ -390,7 +431,7 @@ class SpeechTranscriberClient:
             if self.cumulative_text in current_text:
                 # Current contains cumulative, extract the rest
                 idx = current_text.find(self.cumulative_text)
-                new_text = current_text[idx + len(self.cumulative_text):].strip()
+                new_text = current_text[idx + len(self.cumulative_text) :].strip()
                 return new_text
             else:
                 # No clear relationship, output all
@@ -406,7 +447,9 @@ class Recorder:
         self.callback = callback
         self.streaming_callback = streaming_callback
         self.recording = False
-        self.stream_interval = 3.0  # Increased from 1.0 to 3.0 seconds for better accuracy
+        self.stream_interval = (
+            3.0  # Increased from 1.0 to 3.0 seconds for better accuracy
+        )
         self.overlap_duration = 0.5  # Keep 0.5s overlap with previous chunk for context
         # 获取音频配置管理器
         self.audio_config = get_audio_config_manager()
@@ -456,8 +499,12 @@ class Recorder:
 
             frames = []
             chunk_frames = []
-            frames_per_chunk = int(sample_rate * self.stream_interval / frames_per_buffer)
-            frames_for_overlap = int(sample_rate * self.overlap_duration / frames_per_buffer)
+            frames_per_chunk = int(
+                sample_rate * self.stream_interval / frames_per_buffer
+            )
+            frames_for_overlap = int(
+                sample_rate * self.overlap_duration / frames_per_buffer
+            )
             frame_count = 0
 
             print("Recording audio...")
@@ -473,14 +520,20 @@ class Recorder:
                         if frame_count >= frames_per_chunk:
                             # Combine overlap from previous chunk with current chunk
                             combined_frames = self.previous_chunk_frames + chunk_frames
-                            audio_chunk = np.frombuffer(b"".join(combined_frames), dtype=np.int16)
+                            audio_chunk = np.frombuffer(
+                                b"".join(combined_frames), dtype=np.int16
+                            )
                             audio_chunk_fp32 = audio_chunk.astype(np.float32) / 32768.0
 
                             # Send for transcription
                             self.streaming_callback(audio=audio_chunk_fp32)
 
                             # Keep last frames_for_overlap frames for next chunk's context
-                            self.previous_chunk_frames = chunk_frames[-frames_for_overlap:] if len(chunk_frames) >= frames_for_overlap else chunk_frames
+                            self.previous_chunk_frames = (
+                                chunk_frames[-frames_for_overlap:]
+                                if len(chunk_frames) >= frames_for_overlap
+                                else chunk_frames
+                            )
 
                             chunk_frames = []
                             frame_count = 0
@@ -488,7 +541,9 @@ class Recorder:
                     print(f"Error reading audio frame: {e}")
                     break
 
-            print(f"Recorded {len(frames)} frames ({len(frames) * frames_per_buffer / sample_rate:.2f}s)")
+            print(
+                f"Recorded {len(frames)} frames ({len(frames) * frames_per_buffer / sample_rate:.2f}s)"
+            )
 
             if stream is not None:
                 stream.stop_stream()
@@ -508,6 +563,7 @@ class Recorder:
         except Exception as e:
             print(f"✗ Recording error: {e}")
             import traceback
+
             traceback.print_exc()
 
             # Cleanup
@@ -527,6 +583,307 @@ class Recorder:
             self.callback(audio=np.array([], dtype=np.float32))
 
 
+def is_running_in_terminal():
+    """Check if the program is running in a terminal (not just focused on one)"""
+    if platform.system() == "Windows":
+        return False
+
+    # Check if we can access /dev/tty (the controlling terminal)
+    # This works even if stdout is redirected
+    try:
+        # Try to open /dev/tty to check if we have a controlling terminal
+        try:
+            with open("/dev/tty", "r"):
+                term_env = os.environ.get("TERM", "")
+                if term_env and term_env not in ["dumb", ""]:
+                    return True
+        except (IOError, OSError):
+            pass
+
+    except Exception:
+        pass
+
+    return False
+
+
+def disable_bracketed_paste():
+    """Disable bracketed paste mode in terminal"""
+    if platform.system() == "Windows":
+        return
+
+    try:
+        # Send escape sequence directly to /dev/tty (the controlling terminal)
+        # This works even if stdout is redirected
+        with open("/dev/tty", "w") as tty:
+            tty.write("\033[?2004l")
+            tty.flush()
+        time.sleep(0.2)  # Give terminal more time to process the escape sequence
+    except Exception:
+        pass
+
+
+def enable_bracketed_paste():
+    """Enable bracketed paste mode in terminal"""
+    if platform.system() == "Windows":
+        return
+
+    try:
+        # Send escape sequence directly to /dev/tty (the controlling terminal)
+        # This works even if stdout is redirected
+        time.sleep(0.05)  # Give terminal time before re-enabling
+        with open("/dev/tty", "w") as tty:
+            tty.write("\033[?2004h")
+            tty.flush()
+    except Exception:
+        pass
+
+
+def get_ime_state():
+    """Get current input method state (fcitx or ibus)
+
+    Returns:
+        tuple: (ime_type, state) where ime_type is 'fcitx', 'ibus', or None
+               and state is the current state (varies by IME type)
+    """
+    if platform.system() == "Windows":
+        return (None, None)
+
+    # Try fcitx first
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["fcitx-remote"], capture_output=True, text=True, timeout=0.5
+        )
+        if result.returncode == 0:
+            state = result.stdout.strip()
+            return ("fcitx", state)
+    except (FileNotFoundError, subprocess.SubprocessError):
+        pass
+
+    # Try ibus
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["ibus", "engine"], capture_output=True, text=True, timeout=0.5
+        )
+        if result.returncode == 0:
+            engine = result.stdout.strip()
+            return ("ibus", engine)
+    except (FileNotFoundError, subprocess.SubprocessError):
+        pass
+
+    return (None, None)
+
+
+def disable_ime():
+    """Temporarily disable input method (switch to English)
+
+    Returns:
+        tuple: (ime_type, original_state) to restore later
+    """
+    if platform.system() == "Windows":
+        return (None, None)
+
+    ime_type, state = get_ime_state()
+
+    if ime_type == "fcitx":
+        # fcitx-remote -c: deactivate (switch to English)
+        try:
+            import subprocess
+
+            subprocess.run(["fcitx-remote", "-c"], timeout=0.5)
+            return ("fcitx", state)
+        except Exception:
+            pass
+
+    elif ime_type == "ibus":
+        # Switch to xkb:us::eng (English keyboard)
+        try:
+            import subprocess
+
+            subprocess.run(["ibus", "engine", "xkb:us::eng"], timeout=0.5)
+            return ("ibus", state)
+        except Exception:
+            pass
+
+    return (None, None)
+
+
+def restore_ime(ime_info):
+    """Restore input method to previous state
+
+    Args:
+        ime_info: tuple (ime_type, original_state) from disable_ime()
+    """
+    if platform.system() == "Windows":
+        return
+
+    ime_type, original_state = ime_info
+
+    if ime_type == "fcitx" and original_state == "2":
+        # Restore to active state
+        try:
+            import subprocess
+
+            subprocess.run(["fcitx-remote", "-o"], timeout=0.5)
+        except Exception:
+            pass
+
+    elif ime_type == "ibus" and original_state:
+        # Restore to original engine
+        try:
+            import subprocess
+
+            subprocess.run(["ibus", "engine", original_state], timeout=0.5)
+        except Exception:
+            pass
+
+
+def get_active_window_class():
+    """Get the class name of the currently active window
+
+    Returns:
+        str: Window class name, or None if detection fails
+    """
+    if platform.system() == "Windows":
+        return None
+
+    try:
+        import subprocess
+
+        # Get active window ID using xdotool
+        result = subprocess.run(
+            ["xdotool", "getactivewindow"], capture_output=True, text=True, timeout=0.5
+        )
+
+        if result.returncode == 0:
+            window_id = result.stdout.strip()
+
+            # Get window class using xprop
+            result = subprocess.run(
+                ["xprop", "-id", window_id, "WM_CLASS"],
+                capture_output=True,
+                text=True,
+                timeout=0.5,
+            )
+
+            if result.returncode == 0:
+                # Parse output like: WM_CLASS(STRING) = "gnome-terminal-server", "Gnome-terminal"
+                output = result.stdout.strip()
+                if "WM_CLASS" in output:
+                    # Extract class names from the output
+                    import re
+
+                    matches = re.findall(r'"([^"]+)"', output)
+                    if matches:
+                        # Return all class names as lowercase for easier matching
+                        window_classes = [m.lower() for m in matches]
+                        return window_classes
+    except Exception:
+        pass
+
+    return None
+
+
+def is_terminal_window():
+    """Check if the currently active window is a terminal emulator
+
+    Returns:
+        bool: True if active window is a terminal, False otherwise
+    """
+    window_classes = get_active_window_class()
+
+    if not window_classes:
+        return False
+
+    # List of known terminal emulator class names/patterns
+    # Also includes text editors with integrated terminals (VSCode, etc)
+    terminal_indicators = [
+        "terminal",
+        "konsole",
+        "xterm",
+        "rxvt",
+        "terminator",
+        "gnome-terminal",
+        "xfce4-terminal",
+        "mate-terminal",
+        "lxterminal",
+        "tilix",
+        "alacritty",
+        "kitty",
+        "wezterm",
+        "foot",
+        "qterminal",
+        "deepin-terminal",
+        "terminology",
+        "guake",
+        "tilda",
+        "yakuake",
+        "code",  # VSCode
+        "vscode",  # VSCode alternative class name
+        "vim",  # Vim/Neovim
+        "nvim",  # Neovim
+    ]
+
+    # Check if any window class contains terminal indicators
+    for window_class in window_classes:
+        for indicator in terminal_indicators:
+            if indicator in window_class:
+                return True
+
+    # Also check for specific terminal applications that might not have 'terminal' in the name
+    for window_class in window_classes:
+        if window_class in ["urxvt", "st", "cool-retro-term", "hyper"]:
+            return True
+
+    return False
+
+
+def ensure_ime_disabled(timeout=2.0):
+    """Ensure input method is disabled, with retry logic
+
+    Args:
+        timeout: Maximum time to wait for IME to be disabled (seconds)
+
+    Returns:
+        bool: True if IME was successfully disabled, False otherwise
+    """
+    if platform.system() == "Windows":
+        return True
+
+    import subprocess
+
+    start_time = time.time()
+    attempt = 0
+
+    while time.time() - start_time < timeout:
+        attempt += 1
+
+        # Check fcitx state
+        try:
+            result = subprocess.run(
+                ["fcitx-remote"], capture_output=True, text=True, timeout=0.5
+            )
+            if result.returncode == 0:
+                state = result.stdout.strip()
+
+                if state == "1":  # 1 = inactive (disabled)
+                    return True
+                elif state == "2":  # 2 = active (enabled)
+                    subprocess.run(["fcitx-remote", "-c"], timeout=0.5)
+                    time.sleep(0.2)  # Wait for command to take effect
+                    continue
+        except (FileNotFoundError, subprocess.SubprocessError):
+            # fcitx not available, assume no IME interference
+            return True
+
+        time.sleep(0.1)  # Small delay before retry
+
+    return False
+
+
 class KeyboardReplayer:
     """Keyboard output handler"""
 
@@ -534,6 +891,47 @@ class KeyboardReplayer:
         self.callback = callback
         self.kb = keyboard.Controller()
         self.converter = converter
+
+    def _paste_text(self, text=None):
+        """Paste text from clipboard using appropriate method
+
+        Args:
+            text: Text to paste/type. If None, pastes from clipboard.
+        """
+        # Auto-detect window type and choose appropriate paste method
+        if platform.system() != "Windows":
+            try:
+                import subprocess
+
+                # Detect if active window is a terminal
+                use_terminal_paste = is_terminal_window()
+
+                if use_terminal_paste:
+                    # Use Ctrl+Shift+V for terminal windows
+                    subprocess.run(
+                        ["xdotool", "key", "--clearmodifiers", "ctrl+shift+v"],
+                        check=True,
+                        timeout=2,
+                    )
+                else:
+                    # Use Ctrl+V for non-terminal applications
+                    subprocess.run(
+                        ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
+                        check=True,
+                        timeout=2,
+                    )
+
+                time.sleep(0.15)
+                return
+            except (FileNotFoundError, subprocess.SubprocessError):
+                pass
+
+        # Fallback: pynput for Windows or if xdotool fails
+        time.sleep(0.1)
+        with self.kb.pressed(keyboard.Key.ctrl):
+            self.kb.press("v")
+            self.kb.release("v")
+        time.sleep(0.15)
 
     def replay(self, event):
         segments = event.kwargs.get("segments", [])
@@ -573,9 +971,8 @@ class KeyboardReplayer:
 
                 time.sleep(0.1)
 
-                with self.kb.pressed(keyboard.Key.ctrl):
-                    self.kb.press("v")
-                    self.kb.release("v")
+                # Paste using appropriate shortcut (Ctrl+Shift+V for terminal, Ctrl+V for others)
+                self._paste_text(text=full_text)
 
                 print("Paste command sent.")
 
@@ -600,9 +997,8 @@ class KeyboardReplayer:
                     pyperclip.copy(text)
                     time.sleep(0.05)
 
-                    with self.kb.pressed(keyboard.Key.ctrl):
-                        self.kb.press("v")
-                        self.kb.release("v")
+                    # Paste using appropriate shortcut
+                    self._paste_text(text=text)
 
                     time.sleep(0.05)
                     self.kb.type(" ")
@@ -786,9 +1182,11 @@ class App:
         try:
             input_rate, output_rate = initialize_audio_config(
                 input_device=None,  # 使用默认输入设备
-                output_device=args.audio_device if platform.system() != "Windows" else None,
+                output_device=(
+                    args.audio_device if platform.system() != "Windows" else None
+                ),
                 preferred_input_rate=16000,  # 语音识别偏好采样率
-                preferred_output_rate=44100  # 播放偏好采样率
+                preferred_output_rate=44100,  # 播放偏好采样率
             )
             print(f"✓ 音频配置初始化完成: 输入={input_rate}Hz, 输出={output_rate}Hz")
 
@@ -804,6 +1202,7 @@ class App:
         if platform.system() != "Windows" and args.audio_device is not None:
             try:
                 import sounddevice
+
                 set_audio_device(args.audio_device)
                 device_info = sounddevice.query_devices(args.audio_device)
                 print(f"使用音频设备 {args.audio_device}: {device_info['name']}")
@@ -850,6 +1249,7 @@ class App:
 
         # Initialize recorder with live streaming support
         if streaming:
+
             def live_transcribe_callback(audio):
                 """Live transcription callback during recording"""
                 # Run in separate thread to avoid blocking recording
@@ -860,7 +1260,9 @@ class App:
                 thread.daemon = True
                 thread.start()
 
-            self.recorder = Recorder(m.finish_recording, streaming_callback=live_transcribe_callback)
+            self.recorder = Recorder(
+                m.finish_recording, streaming_callback=live_transcribe_callback
+            )
             print("✓ Live streaming transcription enabled")
         else:
             self.recorder = Recorder(m.finish_recording)
@@ -900,32 +1302,24 @@ class App:
 
     def start(self):
         if self.m.is_READY():
-            print(f"[DEBUG] Starting recording (state: {self.m.state})")
             # Start state transition FIRST (before beep) to avoid delay
             if self.args.max_time:
                 self.timer = threading.Timer(self.args.max_time, self.timer_stop)
                 self.timer.start()
             self.m.start_recording()
-            print(f"[DEBUG] Recording started (new state: {self.m.state})")
             # Play beep sound after state transition (non-blocking)
             self.beep("start_recording", wait=False)
             return True
-        else:
-            print(f"[DEBUG] Cannot start - not in READY state (current: {self.m.state})")
-            return False
+        return False
 
     def stop(self):
         if self.m.is_RECORDING():
-            print(f"[DEBUG] Stopping recording (state: {self.m.state})")
             self.recorder.stop()
             if self.timer is not None:
                 self.timer.cancel()
             self.beep("finish_recording", wait=False)
-            print(f"[DEBUG] Recording stopped")
             return True
-        else:
-            print(f"[DEBUG] Cannot stop - not in RECORDING state (current: {self.m.state})")
-            return False
+        return False
 
     def timer_stop(self):
         print("Timer stopped")
@@ -937,15 +1331,11 @@ class App:
         time_since_last = current_time - self.last_toggle_time
 
         if time_since_last < self.debounce_interval:
-            print(f"[DEBUG] Ignored toggle (debounce: {time_since_last:.3f}s < {self.debounce_interval}s)")
             return False
 
         self.last_toggle_time = current_time
-        print(f"[DEBUG] Toggle triggered (state: {self.m.state})")
 
         result = self.start() or self.stop()
-        if not result:
-            print(f"[DEBUG] Toggle had no effect (state: {self.m.state})")
         return result
 
     def run(self):
@@ -983,14 +1373,17 @@ if __name__ == "__main__":
         print("=== 音频配置测试 ===")
         try:
             from audio_utils import AudioConfigManager
+
             config_manager = AudioConfigManager()
 
             # 初始化配置（包含设备测试）
             input_rate, output_rate = config_manager.initialize(
                 input_device=None,
-                output_device=args.audio_device if platform.system() != "Windows" else None,
+                output_device=(
+                    args.audio_device if platform.system() != "Windows" else None
+                ),
                 preferred_input_rate=16000,
-                preferred_output_rate=44100
+                preferred_output_rate=44100,
             )
 
             print(f"\n检测结果:")
@@ -1001,6 +1394,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"✗ 音频配置测试失败: {e}")
             import traceback
+
             traceback.print_exc()
         exit(0)
 
@@ -1010,12 +1404,15 @@ if __name__ == "__main__":
             print("Audio device listing is not supported on Windows")
         else:
             import sounddevice as sd
+
             print("=== Available Audio Devices ===")
             devices = sd.query_devices()
             for i, device in enumerate(devices):
-                if device['max_output_channels'] > 0:
+                if device["max_output_channels"] > 0:
                     marker = " (default)" if i == sd.default.device[1] else ""
-                    print(f"{i}: {device['name']} - {device['max_output_channels']} output channels{marker}")
+                    print(
+                        f"{i}: {device['name']} - {device['max_output_channels']} output channels{marker}"
+                    )
         exit(0)
 
     App(args).run()

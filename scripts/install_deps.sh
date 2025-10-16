@@ -303,7 +303,9 @@ install_system_deps() {
                 git \
                 gnupg2 \
                 ca-certificates \
-                software-properties-common
+                software-properties-common \
+                xdotool \
+                x11-utils
             ;;
         "centos"|"fedora")
             $PKG_INSTALL \
@@ -314,7 +316,9 @@ install_system_deps() {
                 wget \
                 git \
                 gnupg2 \
-                ca-certificates
+                ca-certificates \
+                xdotool \
+                xorg-x11-utils
             ;;
     esac
 
