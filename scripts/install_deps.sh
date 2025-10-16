@@ -330,6 +330,12 @@ install_miniconda() {
         CONDA_VERSION=$(conda --version 2>/dev/null | cut -d' ' -f2)
         log_success "Conda已安装，版本: $CONDA_VERSION"
 
+        # 确保channels已配置
+        log_info "确保Conda channels已配置..."
+        conda config --add channels defaults 2>/dev/null || true
+        conda config --add channels conda-forge 2>/dev/null || true
+        conda config --set channel_priority flexible 2>/dev/null || true
+
         # 检查是否已安装mamba
         if command -v mamba &> /dev/null; then
             MAMBA_VERSION=$(mamba --version 2>/dev/null | cut -d' ' -f2)
@@ -371,21 +377,53 @@ install_miniconda() {
     # 清理安装文件
     rm -f "$installer_path"
 
-    # 初始化conda
+    # 立即source conda.sh使conda命令可用
+    log_info "加载Conda环境..."
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+
+    # 配置必要的channels
+    log_info "配置Conda channels..."
+    conda config --add channels defaults
+    conda config --add channels conda-forge
+    conda config --set channel_priority flexible
+
+    # 初始化conda（修改shell配置文件）
     log_info "初始化Conda..."
-    "$HOME/miniconda3/bin/conda" init bash
+    conda init bash
 
-    # 添加到PATH
-    echo 'export PATH="$HOME/miniconda3/bin:$PATH"' >> ~/.bashrc
-
-    # 立即生效
-    export PATH="$HOME/miniconda3/bin:$PATH"
+    # 添加到PATH（确保下次登录也能使用）
+    if ! grep -q 'export PATH="$HOME/miniconda3/bin:$PATH"' ~/.bashrc; then
+        echo 'export PATH="$HOME/miniconda3/bin:$PATH"' >> ~/.bashrc
+    fi
 
     # 验证安装
     if command -v conda &> /dev/null; then
-        log_success "Miniconda安装成功"
-        USE_MAMBA=false
-        return 0
+        CONDA_VERSION=$(conda --version 2>/dev/null | cut -d' ' -f2)
+        log_success "Miniconda安装成功，版本: $CONDA_VERSION"
+        log_info "Channels配置: defaults, conda-forge"
+
+        # 提示用户需要重启终端
+        echo
+        echo "========================================"
+        log_warning "重要提示：Conda初始化完成"
+        echo "========================================"
+        echo
+        log_info "Conda已成功安装并初始化，但需要重启终端才能生效。"
+        echo
+        log_info "请按照以下步骤操作："
+        echo "  1. 关闭当前终端窗口"
+        echo "  2. 重新打开一个新的终端"
+        echo "  3. 再次运行安装脚本："
+        echo "     cd $(pwd)"
+        echo "     $0 $*"
+        echo
+        log_info "或者在当前终端执行以下命令后继续："
+        echo "     source ~/.bashrc"
+        echo "     $0 $*"
+        echo
+        echo "========================================"
+
+        exit 0
     else
         log_error "Miniconda安装失败"
         return 1

@@ -143,17 +143,44 @@ where conda >nul 2>&1
 if not errorlevel 1 (
     for /f "tokens=2" %%i in ('conda --version 2^>^&1') do set "CONDA_VERSION=%%i"
     echo [INFO] Conda already installed, version: !CONDA_VERSION!
+
+    REM Configure conda channels (ensure they are set)
+    echo [INFO] Ensuring Conda channels are configured...
+    call conda config --add channels defaults 2>nul
+    call conda config --add channels conda-forge 2>nul
+    call conda config --set channel_priority flexible 2>nul
+    echo [INFO] Channels configured: defaults, conda-forge
+
     goto :eof
 )
 
-echo [INFO] Conda not found. Please install Miniconda manually:
 echo.
-echo 1. Download Miniconda from: https://docs.conda.io/en/latest/miniconda.html
-echo 2. Choose Windows 64-bit installer
-echo 3. During installation, check "Add Miniconda3 to PATH"
-echo 4. After installation, restart this script
+echo ========================================
+echo [INFO] Conda Not Found - Manual Installation Required
+echo ========================================
 echo.
-echo [ERROR] Please install Miniconda and restart this script
+echo Miniconda needs to be installed before continuing.
+echo.
+echo Please follow these steps:
+echo.
+echo 1. Download Miniconda from:
+echo    https://docs.conda.io/en/latest/miniconda.html
+echo.
+echo 2. Choose "Miniconda3 Windows 64-bit" installer
+echo.
+echo 3. During installation:
+echo    - Check "Add Miniconda3 to my PATH environment variable"
+echo    - Or check "Register Miniconda3 as my default Python"
+echo.
+echo 4. After installation completes:
+echo    - Close this Command Prompt window
+echo    - Open a NEW Command Prompt window
+echo    - Navigate back to: %PROJECT_DIR%
+echo    - Run this script again: %SCRIPT_NAME% %INSTALL_MODE%
+echo.
+echo ========================================
+echo.
+pause
 exit /b 1
 
 :create_conda_env
