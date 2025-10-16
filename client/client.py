@@ -777,6 +777,10 @@ class App:
         self.args = args
         self.enable_beep = args.enable_beep
 
+        # Debounce mechanism to prevent double-triggering
+        self.last_toggle_time = 0
+        self.debounce_interval = 0.3  # 300ms debounce window
+
         # 初始化音频配置 - 自动检测最佳采样率
         print("正在初始化音频配置...")
         try:
@@ -896,27 +900,51 @@ class App:
 
     def start(self):
         if self.m.is_READY():
+            print(f"[DEBUG] Starting recording (state: {self.m.state})")
             self.beep("start_recording")
             if self.args.max_time:
                 self.timer = threading.Timer(self.args.max_time, self.timer_stop)
                 self.timer.start()
             self.m.start_recording()
+            print(f"[DEBUG] Recording started (new state: {self.m.state})")
             return True
+        else:
+            print(f"[DEBUG] Cannot start - not in READY state (current: {self.m.state})")
+            return False
 
     def stop(self):
         if self.m.is_RECORDING():
+            print(f"[DEBUG] Stopping recording (state: {self.m.state})")
             self.recorder.stop()
             if self.timer is not None:
                 self.timer.cancel()
             self.beep("finish_recording", wait=False)
+            print(f"[DEBUG] Recording stopped")
             return True
+        else:
+            print(f"[DEBUG] Cannot stop - not in RECORDING state (current: {self.m.state})")
+            return False
 
     def timer_stop(self):
         print("Timer stopped")
         self.stop()
 
     def toggle(self):
-        return self.start() or self.stop()
+        # Debounce mechanism to prevent rapid double-triggering
+        current_time = time.time()
+        time_since_last = current_time - self.last_toggle_time
+
+        if time_since_last < self.debounce_interval:
+            print(f"[DEBUG] Ignored toggle (debounce: {time_since_last:.3f}s < {self.debounce_interval}s)")
+            return False
+
+        self.last_toggle_time = current_time
+        print(f"[DEBUG] Toggle triggered (state: {self.m.state})")
+
+        result = self.start() or self.stop()
+        if not result:
+            print(f"[DEBUG] Toggle had no effect (state: {self.m.state})")
+        return result
 
     def run(self):
         """Run the application"""

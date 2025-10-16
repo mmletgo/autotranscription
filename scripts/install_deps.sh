@@ -736,7 +736,7 @@ create_client_config() {
     "max_time": 30,
     "zh_convert": "none",
     "streaming": true,
-    "key_combo": "<alt>",
+    "key_combo": "<caps_lock>",
     "sample_rate": 16000,
     "channels": 1
 }
@@ -809,7 +809,7 @@ EOF
     "max_time": 30,
     "zh_convert": "none",
     "streaming": true,
-    "key_combo": "<alt>",
+    "key_combo": "<caps_lock>",
     "sample_rate": 16000,
     "channels": 1
 }

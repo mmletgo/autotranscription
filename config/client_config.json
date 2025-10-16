@@ -4,7 +4,7 @@
   "language": "zh",
   "streaming": false,
   "zh_convert": "t2s",
-  "key_combo": "<alt>+w",
+  "key_combo": "<alt>",
   "audio_device": 5,
   "enable_beep": true,
   "_comments": {
