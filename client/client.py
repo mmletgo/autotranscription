@@ -745,11 +745,35 @@ def get_active_window_class():
     """Get the class name of the currently active window
 
     Returns:
-        str: Window class name, or None if detection fails
+        list: Window class names, or None if detection fails
     """
     if platform.system() == "Windows":
+        try:
+            import subprocess
+
+            # Get active window title using tasklist (Windows command)
+            result = subprocess.run(
+                ["tasklist", "/V", "/FO", "CSV"], capture_output=True, text=True, timeout=1
+            )
+
+            if result.returncode == 0:
+                # Parse CSV output to find active window
+                lines = result.stdout.strip().split("\n")
+                for line in lines:
+                    # Look for the window with Focus "true"
+                    if '"true"' in line.lower():
+                        # Extract program name from CSV
+                        parts = line.split(",")
+                        if len(parts) >= 1:
+                            # Get first column (Image Name) and clean it
+                            window_name = parts[0].strip('"').lower()
+                            return [window_name]
+        except Exception:
+            pass
+
         return None
 
+    # Linux/macOS implementation using xdotool
     try:
         import subprocess
 
@@ -798,9 +822,10 @@ def is_terminal_window():
     if not window_classes:
         return False
 
-    # List of known terminal emulator class names/patterns
-    # Also includes text editors with integrated terminals (VSCode, etc)
+    # List of known terminal emulator class names/patterns (for all platforms)
+    # Includes terminal emulators, shells, and text editors with integrated terminals
     terminal_indicators = [
+        # Linux terminals
         "terminal",
         "konsole",
         "xterm",
@@ -821,10 +846,22 @@ def is_terminal_window():
         "guake",
         "tilda",
         "yakuake",
+        # Text editors with integrated terminals
         "code",  # VSCode
-        "vscode",  # VSCode alternative class name
+        "vscode",  # VSCode alternative
         "vim",  # Vim/Neovim
         "nvim",  # Neovim
+        # Windows terminals
+        "windowsterminal",  # Windows Terminal
+        "pwsh",  # PowerShell Core
+        "powershell",  # PowerShell
+        "cmd",  # Command Prompt
+        "bash",  # WSL Bash
+        "zsh",  # WSL Zsh
+        "fish",  # Fish shell
+        # macOS terminals
+        "iterm2",  # iTerm2
+        "terminal",  # macOS Terminal
     ]
 
     # Check if any window class contains terminal indicators
@@ -833,9 +870,10 @@ def is_terminal_window():
             if indicator in window_class:
                 return True
 
-    # Also check for specific terminal applications that might not have 'terminal' in the name
+    # Also check for specific terminal applications that might not have obvious names
+    specific_terminals = ["urxvt", "st", "cool-retro-term", "hyper", "cmder"]
     for window_class in window_classes:
-        if window_class in ["urxvt", "st", "cool-retro-term", "hyper"]:
+        if window_class in specific_terminals:
             return True
 
     return False
