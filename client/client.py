@@ -901,12 +901,14 @@ class App:
     def start(self):
         if self.m.is_READY():
             print(f"[DEBUG] Starting recording (state: {self.m.state})")
-            self.beep("start_recording")
+            # Start state transition FIRST (before beep) to avoid delay
             if self.args.max_time:
                 self.timer = threading.Timer(self.args.max_time, self.timer_stop)
                 self.timer.start()
             self.m.start_recording()
             print(f"[DEBUG] Recording started (new state: {self.m.state})")
+            # Play beep sound after state transition (non-blocking)
+            self.beep("start_recording", wait=False)
             return True
         else:
             print(f"[DEBUG] Cannot start - not in READY state (current: {self.m.state})")
