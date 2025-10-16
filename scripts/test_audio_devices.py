@@ -10,6 +10,43 @@ import sounddevice as sd
 import os
 import time
 import sys
+import threading
+import queue
+
+def get_user_input_with_timeout(prompt_text: str, timeout_seconds: float = 10.0) -> str:
+    """
+    Get user input with timeout support for Windows compatibility
+
+    Args:
+        prompt_text: The prompt text to display to the user
+        timeout_seconds: Maximum time to wait for input (default: 10 seconds)
+
+    Returns:
+        User input string, or empty string if timeout or error occurs
+    """
+    result_queue = queue.Queue()
+
+    def input_thread():
+        try:
+            user_input = input(prompt_text)
+            result_queue.put(user_input)
+        except (EOFError, KeyboardInterrupt, OSError):
+            result_queue.put("")  # Return empty string on error
+
+    thread = threading.Thread(target=input_thread, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        # Timeout occurred
+        print(f"\n[Timeout after {timeout_seconds}s - moving to next device]")
+        return ""
+
+    try:
+        return result_queue.get_nowait()
+    except queue.Empty:
+        return ""
+
 
 def main():
     # Get project root directory
@@ -54,22 +91,35 @@ def main():
 
         try:
             print("Playing beep sound...")
-            sd.play(data, fs, device=device_id)
 
-            # Wait for playback to finish
-            print("(waiting 3 seconds...)")
-            time.sleep(3)
-            sd.stop()
+            # Use blocking mode with timeout for better Windows compatibility
+            try:
+                sd.play(data, fs, device=device_id, blocking=False)
+                print("(waiting 3 seconds for playback...)")
+                time.sleep(3)
+                sd.stop()
+            except Exception as play_error:
+                print(f"✗ Playback error: {play_error}")
+                print("Moving to next device...")
+                continue
 
-            # Clear any buffered input
-            if sys.stdin.isatty():
-                import termios
-                termios.tcflush(sys.stdin, termios.TCIOFLUSH)
+            # Ask user for feedback with timeout
+            max_attempts = 3
+            attempt = 0
 
-            # Ask user for feedback
-            while True:
+            while attempt < max_attempts:
+                attempt += 1
+
                 try:
-                    response = input("\nDid you hear the beep sound? (y/n/r=replay): ").strip().lower()
+                    response = get_user_input_with_timeout(
+                        "\nDid you hear the beep sound? (y/n/r=replay): ",
+                        timeout_seconds=15.0
+                    ).strip().lower()
+
+                    if not response:
+                        # Timeout or input error - move to next device
+                        print("No response - moving to next device...")
+                        break
 
                     if response == 'y':
                         print(f"\n{'*'*60}")
@@ -86,9 +136,13 @@ def main():
 
                     elif response == 'r':
                         print("Replaying...")
-                        sd.play(data, fs, device=device_id)
-                        time.sleep(3)
-                        sd.stop()
+                        try:
+                            sd.play(data, fs, device=device_id, blocking=False)
+                            time.sleep(3)
+                            sd.stop()
+                        except Exception as replay_error:
+                            print(f"✗ Replay error: {replay_error}")
+                            break
                         continue
 
                     elif response == 'n':
@@ -97,8 +151,11 @@ def main():
 
                     else:
                         print("Please enter 'y' (yes), 'n' (no), or 'r' (replay)")
+                        if attempt >= max_attempts:
+                            print("Too many invalid inputs - moving to next device...")
+                            break
 
-                except (EOFError, KeyboardInterrupt):
+                except KeyboardInterrupt:
                     print("\n\nTest interrupted by user.")
                     return 1
 

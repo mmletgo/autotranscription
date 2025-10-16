@@ -321,8 +321,8 @@ conda activate autotranscription
 pip install -r client/requirements.txt
 
 # Install PyAudio (Windows requires special handling)
-pip install pipwin
-pipwin install pyaudio
+# The installation script will handle this automatically
+# If it fails, see the Windows Common Issues section below
 ```
 
 **Full or Server Only Installation** (requires GPU):
@@ -335,8 +335,8 @@ pip install -r server/requirements.txt
 
 # Install client dependencies (if needed)
 pip install -r client/requirements.txt
-pip install pipwin
-pipwin install pyaudio
+# PyAudio installation will be handled by the installation script
+# See Windows Common Issues section if installation fails
 ```
 
 **6. Configuration Files**
@@ -442,6 +442,55 @@ set SERVER_URL=http://192.168.1.100:5000
 scripts\windows\start_client.bat start
 ```
 
+**Audio Device Test Script** (`scripts\windows\test_audio.bat`):
+```cmd
+REM Test audio devices
+scripts\windows\test_audio.bat             # Test audio output devices
+```
+
+This script is used to test and configure audio output devices on Windows:
+- Automatically detects and activates Conda environment
+- Lists all available audio output devices
+- Tests playback on each device sequentially
+- Helps find the device ID that can play beep sounds correctly
+- Provides configuration suggestions and instructions
+
+**Diagnostic and Service Management Scripts**:
+```cmd
+REM CUDA environment diagnostic
+scripts\windows\cuda_check.bat             # Diagnose CUDA and GPU configuration
+
+REM Client connection diagnostic
+scripts\windows\diagnose_client_connection.bat          # Diagnose client-server connection issues
+scripts\windows\diagnose_client_connection.bat <server_ip> <port>  # Specify server IP and port
+
+REM Client service management (using NSSM)
+scripts\windows\install_client_service.bat install      # Install client as Windows service
+scripts\windows\install_client_service.bat uninstall    # Uninstall client service
+scripts\windows\install_client_service.bat status       # View service status
+scripts\windows\install_client_service.bat enable       # Enable auto-start on boot
+scripts\windows\install_client_service.bat disable      # Disable auto-start on boot
+scripts\windows\install_client_service.bat start        # Start service
+scripts\windows\install_client_service.bat stop         # Stop service
+scripts\windows\install_client_service.bat restart      # Restart service
+
+REM Client service uninstallation (advanced options)
+scripts\windows\uninstall_client_service.bat full       # Complete uninstall (remove service, config and logs)
+scripts\windows\uninstall_client_service.bat service    # Only uninstall service (keep config and logs)
+scripts\windows\uninstall_client_service.bat clean      # Clean residual files
+scripts\windows\uninstall_client_service.bat status     # View status before uninstall
+```
+
+**Diagnostic Script Description**:
+- `cuda_check.bat`: Check NVIDIA driver, CUDA, PyTorch and Whisper GPU functionality
+- `diagnose_client_connection.bat`: Test network connectivity, port reachability, HTTP API connection
+
+**Service Management Notes**:
+- Windows service management uses NSSM (Non-Sucking Service Manager)
+- Requires administrator privileges
+- Install NSSM: Download from https://nssm.cc/download or use `choco install nssm`
+- Service log location: `logs\client_service.log`
+
 **Usage Examples**:
 
 1. **One-click install complete system**:
@@ -475,7 +524,7 @@ scripts\windows\manage.bat client
 **Script Features**:
 - ✅ Auto-detect and configure Conda environment
 - ✅ Auto-detect CUDA and GPU
-- ✅ Smart dependency installation (uses pipwin for PyAudio)
+- ✅ Smart dependency installation (multiple PyAudio installation methods)
 - ✅ Complete process management (start/stop/restart/status)
 - ✅ Log management and viewing
 - ✅ Health check and diagnostics
@@ -522,17 +571,39 @@ nssm remove AutoTranscription-Client confirm
 
 #### Windows Common Issues
 
-**1. PyAudio Installation Failure**
-```cmd
-# Method 1: Use pipwin
-pip install pipwin
-pipwin install pyaudio
+**1. Microphone Not Recording**
 
-# Method 2: Download precompiled wheel file
-# Visit https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+If you encounter microphone recording issues on Windows (recording energy is 0, transcription returns empty results), please refer to the detailed troubleshooting guide:
+
+📖 **[Windows Microphone Troubleshooting Guide](docs/troubleshooting_microphone_windows.md)**
+
+The guide covers:
+- Windows privacy settings check
+- System-level microphone testing
+- Realtek Audio Manager configuration
+- Audio device diagnostic tool usage
+- Driver troubleshooting
+
+**2. PyAudio Installation Failure**
+
+PyAudio is the core component for client audio recording. Windows installation may encounter issues. We provide multiple solutions:
+
+```cmd
+# Method 1: Use dedicated installation script (Recommended)
+conda activate autotranscription
+scripts\windows\install_pyaudio.bat
+
+# Method 2: Use conda-forge (Most Reliable)
+conda activate autotranscription
+conda install -c conda-forge pyaudio
+
+# Method 3: Manually download precompiled wheel file
+# Visit https://github.com/intxcc/pyaudio_portaudio/releases
 # Download .whl file for your Python version
-pip install PyAudio-0.2.11-cp310-cp310-win_amd64.whl
+pip install PyAudio-0.2.14-cp310-cp310-win_amd64.whl
 ```
+
+**Detailed Information**: Please refer to [PyAudio Windows Installation Guide](docs/pyaudio_installation_windows.md)
 
 **2. CUDA Unavailable**
 ```cmd

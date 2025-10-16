@@ -442,6 +442,55 @@ set SERVER_URL=http://192.168.1.100:5000
 scripts\windows\start_client.bat start
 ```
 
+**音频设备测试脚本** (`scripts\windows\test_audio.bat`):
+```cmd
+REM 测试音频设备
+scripts\windows\test_audio.bat             # 测试音频输出设备
+```
+
+该脚本用于测试和配置Windows环境下的音频输出设备:
+- 自动检测并激活Conda环境
+- 列出所有可用的音频输出设备
+- 依次测试每个设备的播放效果
+- 帮助找到能正常播放提示音的设备ID
+- 提供配置建议和说明
+
+**诊断和服务管理脚本**:
+```cmd
+REM CUDA环境诊断
+scripts\windows\cuda_check.bat             # 诊断CUDA和GPU配置
+
+REM 客户端连接诊断
+scripts\windows\diagnose_client_connection.bat          # 诊断客户端与服务端的连接问题
+scripts\windows\diagnose_client_connection.bat <server_ip> <port>  # 指定服务器IP和端口
+
+REM 客户端服务管理 (使用NSSM)
+scripts\windows\install_client_service.bat install      # 安装客户端为Windows服务
+scripts\windows\install_client_service.bat uninstall    # 卸载客户端服务
+scripts\windows\install_client_service.bat status       # 查看服务状态
+scripts\windows\install_client_service.bat enable       # 启用开机自启
+scripts\windows\install_client_service.bat disable      # 禁用开机自启
+scripts\windows\install_client_service.bat start        # 启动服务
+scripts\windows\install_client_service.bat stop         # 停止服务
+scripts\windows\install_client_service.bat restart      # 重启服务
+
+REM 客户端服务卸载 (高级选项)
+scripts\windows\uninstall_client_service.bat full       # 完全卸载(删除服务、配置和日志)
+scripts\windows\uninstall_client_service.bat service    # 仅卸载服务(保留配置和日志)
+scripts\windows\uninstall_client_service.bat clean      # 清理残留文件
+scripts\windows\uninstall_client_service.bat status     # 查看卸载前状态
+```
+
+**诊断脚本说明**:
+- `cuda_check.bat`: 检查NVIDIA驱动、CUDA、PyTorch和Whisper GPU功能
+- `diagnose_client_connection.bat`: 测试网络连通性、端口可达性、HTTP API连接
+
+**服务管理说明**:
+- Windows服务管理使用NSSM (Non-Sucking Service Manager)
+- 需要管理员权限
+- 安装NSSM: 从 https://nssm.cc/download 下载或使用 `choco install nssm`
+- 服务日志位置: `logs\client_service.log`
+
 **使用示例**:
 
 1. **一键安装完整系统**:
@@ -522,17 +571,39 @@ nssm remove AutoTranscription-Client confirm
 
 #### Windows 常见问题
 
-**1. PyAudio 安装失败**
-```cmd
-# 方法1: 使用 pipwin
-pip install pipwin
-pipwin install pyaudio
+**1. 麦克风无法录音**
 
-# 方法2: 下载预编译 wheel 文件
-# 访问 https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+如果在Windows上遇到麦克风无法录音的问题(录音能量为0,转写返回空结果),请参考详细的排查指南:
+
+📖 **[Windows麦克风问题排查指南](docs/troubleshooting_microphone_windows.md)**
+
+该指南涵盖:
+- Windows隐私设置检查
+- 系统级麦克风测试
+- Realtek音频管理器配置
+- 音频设备诊断工具使用
+- 驱动程序问题排查
+
+**2. PyAudio 安装失败**
+
+PyAudio 是客户端录音的核心组件,Windows 安装可能会遇到问题。我们提供了多种解决方案:
+
+```cmd
+# 方法1: 使用专用安装脚本 (推荐)
+conda activate autotranscription
+scripts\windows\install_pyaudio.bat
+
+# 方法2: 使用 conda-forge (最可靠)
+conda activate autotranscription
+conda install -c conda-forge pyaudio
+
+# 方法3: 手动下载预编译 wheel 文件
+# 访问 https://github.com/intxcc/pyaudio_portaudio/releases
 # 下载对应 Python 版本的 .whl 文件
-pip install PyAudio-0.2.11-cp310-cp310-win_amd64.whl
+pip install PyAudio-0.2.14-cp310-cp310-win_amd64.whl
 ```
+
+**详细信息**: 请参阅 [PyAudio Windows 安装指南](docs/pyaudio_installation_windows.md)
 
 **2. CUDA 不可用**
 ```cmd

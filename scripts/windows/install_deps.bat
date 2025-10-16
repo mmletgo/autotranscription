@@ -219,10 +219,15 @@ REM Install client dependencies
 echo [INFO] Installing client dependencies...
 pip install soundfile pynput transitions pyperclip sounddevice opencc-python-reimplemented
 
-REM Install PyAudio using pipwin
+REM Install PyAudio
 echo [INFO] Installing PyAudio...
-pip install pipwin
-pipwin install pyaudio || echo [WARNING] PyAudio installation failed, please install manually
+call "%PROJECT_DIR%\scripts\windows\install_pyaudio.bat"
+if errorlevel 1 (
+    echo [WARNING] PyAudio installation may have failed
+    echo [INFO] You can try manual installation later using:
+    echo [INFO]   conda activate autotranscription
+    echo [INFO]   conda install -c conda-forge pyaudio
+)
 
 REM Clean conda cache
 echo [INFO] Cleaning conda cache...
@@ -249,8 +254,13 @@ pip install numpy scipy requests soundfile pynput transitions pyperclip sounddev
 
 REM Install PyAudio
 echo [INFO] Installing PyAudio...
-pip install pipwin
-pipwin install pyaudio || echo [WARNING] PyAudio installation failed, please install manually
+call "%PROJECT_DIR%\scripts\windows\install_pyaudio.bat"
+if errorlevel 1 (
+    echo [WARNING] PyAudio installation may have failed
+    echo [INFO] You can try manual installation later using:
+    echo [INFO]   conda activate autotranscription
+    echo [INFO]   conda install -c conda-forge pyaudio
+)
 
 REM Clean conda cache
 echo [INFO] Cleaning conda cache...
@@ -382,21 +392,41 @@ REM Check key modules based on installation mode
 echo [INFO] Checking module imports...
 
 if "%INSTALL_MODE%"=="full" (
-    python -c "import flask, faster_whisper, torch, soundfile, pyaudio, pynput" 2>nul
+    python -c "import flask, faster_whisper, torch, soundfile, pynput" 2>nul
     if errorlevel 1 (
-        echo [ERROR] Some modules failed to import
+        echo [ERROR] Some core modules failed to import
         exit /b 1
     )
-    echo [SUCCESS] All full system modules imported successfully
+    echo [SUCCESS] Core system modules imported successfully
+
+    REM Check PyAudio separately
+    python -c "import pyaudio" 2>nul
+    if errorlevel 1 (
+        echo [WARNING] PyAudio not imported - client audio recording may not work
+        echo [INFO] To install PyAudio manually, activate environment and run:
+        echo [INFO]   conda install -c conda-forge pyaudio
+    ) else (
+        echo [SUCCESS] PyAudio imported successfully
+    )
 )
 
 if "%INSTALL_MODE%"=="client" (
-    python -c "import soundfile, pyaudio, pynput, transitions" 2>nul
+    python -c "import soundfile, pynput, transitions" 2>nul
     if errorlevel 1 (
-        echo [ERROR] Some modules failed to import
+        echo [ERROR] Some core modules failed to import
         exit /b 1
     )
-    echo [SUCCESS] All client modules imported successfully
+    echo [SUCCESS] Core client modules imported successfully
+
+    REM Check PyAudio separately
+    python -c "import pyaudio" 2>nul
+    if errorlevel 1 (
+        echo [WARNING] PyAudio not imported - audio recording may not work
+        echo [INFO] To install PyAudio manually, activate environment and run:
+        echo [INFO]   conda install -c conda-forge pyaudio
+    ) else (
+        echo [SUCCESS] PyAudio imported successfully
+    )
 )
 
 if "%INSTALL_MODE%"=="server" (

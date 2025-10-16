@@ -435,7 +435,7 @@ class Recorder:
         stream = None
 
         try:
-            print(f"正在使用自动检测的采样率: {sample_rate} Hz 初始化音频流...")
+            print(f"正在使用采样率: {sample_rate} Hz")
             p = pyaudio.PyAudio()
 
             # Get default input device info for debugging
@@ -616,10 +616,33 @@ class KeyListener:
     def __init__(self, callback, key):
         self.callback = callback
         self.key = key
+        self.listener = None
+        self.running = False
 
     def run(self):
-        with keyboard.GlobalHotKeys({self.key: self.callback}) as h:
-            h.join()
+        """Run keyboard listener with Ctrl+C support"""
+        self.running = True
+        self.listener = keyboard.GlobalHotKeys({self.key: self.callback})
+        self.listener.start()
+
+        print("Keyboard listener started. Press Ctrl+C to exit.")
+
+        try:
+            # Use a loop with sleep instead of join() to allow Ctrl+C handling
+            while self.running:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nCtrl+C detected. Stopping...")
+            self.stop()
+        finally:
+            if self.listener is not None and self.listener.is_alive():
+                self.listener.stop()
+
+    def stop(self):
+        """Stop the keyboard listener"""
+        self.running = False
+        if self.listener is not None:
+            self.listener.stop()
 
 
 def load_config():
