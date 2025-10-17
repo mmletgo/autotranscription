@@ -20,6 +20,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import gc
 from contextlib import contextmanager
+import socket
 
 # Configure logging
 logging.basicConfig(
@@ -142,6 +143,112 @@ def configure_cors():
     else:
         CORS(app, resources={r"/api/*": {"origins": "*"}})
         logger.info("Network mode: LAN")
+
+
+def get_local_ip():
+    """获取本地IP地址（单个，用于向后兼容）"""
+    ips = get_all_local_ips()
+    # 返回第一个非127.0.0.1的IP地址，如果没有则返回127.0.0.1
+    for ip in ips:
+        if not ip.startswith("127.") and not ip.startswith("169.254"):
+            return ip
+    return ips[0] if ips else "127.0.0.1"
+
+
+def get_all_local_ips():
+    """获取所有本地IP地址"""
+    ips = []
+
+    try:
+        # 方法1：通过连接到外部地址获取默认路由IP（优先）
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                default_ip = s.getsockname()[0]
+                if default_ip not in ips and not default_ip.startswith("127.") and not default_ip.startswith("169.254."):
+                    ips.insert(0, default_ip)  # 插入到开头，因为这是主要网络接口
+        except Exception as e:
+            logger.warning(f"获取默认路由IP失败: {e}")
+
+        # 方法2：使用hostname -I命令获取所有IP（最可靠）
+        try:
+            import subprocess
+            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                hostname_ips = result.stdout.strip().split()
+                for ip in hostname_ips:
+                    if (ip not in ips and
+                        not ip.startswith("127.") and
+                        not ip.startswith("169.254.") and
+                        ":" not in ip):  # 排除IPv6
+                        ips.append(ip)
+        except Exception as e:
+            logger.warning(f"通过hostname -I获取IP地址失败: {e}")
+
+        # 方法3：通过ip命令获取所有IP（Linux系统）
+        try:
+            import subprocess
+            result = subprocess.run(['ip', 'addr', 'show'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                import re
+                # 使用正则表达式提取IPv4地址
+                ip_pattern = r'inet (\d+\.\d+\.\d+\.\d+/\d+)'
+                for line in result.stdout.split('\n'):
+                    match = re.search(ip_pattern, line)
+                    if match:
+                        ip_with_mask = match.group(1)
+                        ip = ip_with_mask.split('/')[0]  # 去掉子网掩码
+                        if (ip not in ips and
+                            not ip.startswith("127.") and
+                            not ip.startswith("169.254.") and
+                            not ip.startswith("0.")):
+                            ips.append(ip)
+        except Exception as e:
+            logger.warning(f"通过ip命令获取IP地址失败: {e}")
+
+        # 方法4：通过ifconfig命令获取所有IP（备用）
+        try:
+            import subprocess
+            result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                import re
+                # 使用正则表达式提取IPv4地址
+                ip_pattern = r'inet (\d+\.\d+\.\d+\.\d+)'
+                for line in result.stdout.split('\n'):
+                    match = re.search(ip_pattern, line)
+                    if match:
+                        ip = match.group(1)
+                        if (ip not in ips and
+                            not ip.startswith("127.") and
+                            not ip.startswith("169.254.") and
+                            not ip.startswith("0.")):
+                            ips.append(ip)
+        except Exception as e:
+            logger.warning(f"通过ifconfig获取IP地址失败: {e}")
+
+        # 方法5：通过主机名获取IP（最后的备用方法）
+        try:
+            hostname = socket.gethostname()
+            addr_info = socket.getaddrinfo(hostname, None)
+            for info in addr_info:
+                ip = info[4][0]
+                if (":" not in ip and  # 排除IPv6
+                    not ip.startswith("127.") and  # 排除本地回环
+                    not ip.startswith("169.254.") and  # 排除链路本地地址
+                    ip not in ips):
+                    ips.append(ip)
+        except Exception as e:
+            logger.warning(f"通过主机名获取IP地址失败: {e}")
+
+        # 如果没有获取到任何IP，至少添加本地回环地址
+        if not ips:
+            ips.append("127.0.0.1")
+
+    except Exception as e:
+        logger.error(f"获取IP地址时发生错误: {e}")
+        ips.append("127.0.0.1")
+
+    return ips
 
 
 # 内存管理装饰器
@@ -641,9 +748,22 @@ def main():
     host = config.get("host", "0.0.0.0")
     port = config.get("port", 5000)
 
+    # 获取所有本地IP地址
+    all_ips = get_all_local_ips()
+    local_ip = get_local_ip()  # 用于向后兼容的主要IP
+
     logger.info("=" * 60)
     logger.info("Audio Transcription Service Starting")
     logger.info(f"Address: http://{host}:{port}")
+    logger.info(f"Primary IP: {local_ip}")
+
+    if len(all_ips) > 1:
+        logger.info("All Available IP Addresses:")
+        for ip in all_ips:
+            logger.info(f"  - http://{ip}:{port}")
+    else:
+        logger.info(f"Local IP: {local_ip}")
+
     logger.info(f"Model: {config['model_size']}")
     logger.info(f"Device: {config['device']}")
     logger.info(f"Network Mode: {config.get('network_mode', 'lan')}")
@@ -653,7 +773,12 @@ def main():
     logger.info(f"Queue Size: {config.get('queue_size', 100)}")
 
     if host == "0.0.0.0":
-        logger.info(f"LAN access: http://<your-ip>:{port}")
+        if len(all_ips) > 1:
+            logger.info("LAN Access URLs:")
+            for ip in all_ips:
+                logger.info(f"  - http://{ip}:{port}")
+        else:
+            logger.info(f"LAN access: http://{local_ip}:{port}")
 
     logger.info("=" * 60)
 

@@ -254,7 +254,150 @@ start_service() {
     check_environment
     load_config
 
+    # 获取并显示IP地址信息
+    log_info "获取网络地址信息..."
+    IP_INFO=$(python3 -c "
+import socket
+import subprocess
+import re
+
+def get_all_local_ips():
+    ips = []
+
+    try:
+        # 方法1：通过连接到外部地址获取默认路由IP（优先）
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(('8.8.8.8', 80))
+                default_ip = s.getsockname()[0]
+                if default_ip not in ips and not default_ip.startswith('127.') and not default_ip.startswith('169.254.'):
+                    ips.insert(0, default_ip)
+        except Exception:
+            pass
+
+        # 方法2：使用hostname -I命令获取所有IP（最可靠）
+        try:
+            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                hostname_ips = result.stdout.strip().split()
+                for ip in hostname_ips:
+                    if (ip not in ips and
+                        not ip.startswith('127.') and
+                        not ip.startswith('169.254.') and
+                        ':' not in ip):  # 排除IPv6
+                        ips.append(ip)
+        except Exception:
+            pass
+
+        # 方法3：通过ip命令获取所有IP（Linux系统）
+        try:
+            result = subprocess.run(['ip', 'addr', 'show'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                ip_pattern = r'inet (\d+\.\d+\.\d+\.\d+/\d+)'
+                for line in result.stdout.split('\n'):
+                    match = re.search(ip_pattern, line)
+                    if match:
+                        ip_with_mask = match.group(1)
+                        ip = ip_with_mask.split('/')[0]  # 去掉子网掩码
+                        if (ip not in ips and
+                            not ip.startswith('127.') and
+                            not ip.startswith('169.254.') and
+                            not ip.startswith('0.')):
+                            ips.append(ip)
+        except Exception:
+            pass
+
+        # 方法4：通过ifconfig命令获取所有IP（备用）
+        try:
+            result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                ip_pattern = r'inet (\d+\.\d+\.\d+\.\d+)'
+                for line in result.stdout.split('\n'):
+                    match = re.search(ip_pattern, line)
+                    if match:
+                        ip = match.group(1)
+                        if (ip not in ips and
+                            not ip.startswith('127.') and
+                            not ip.startswith('169.254.') and
+                            not ip.startswith('0.')):
+                            ips.append(ip)
+        except Exception:
+            pass
+
+        # 方法5：通过主机名获取IP（最后的备用方法）
+        try:
+            hostname = socket.gethostname()
+            addr_info = socket.getaddrinfo(hostname, None)
+            for info in addr_info:
+                ip = info[4][0]
+                if (':' not in ip and
+                    not ip.startswith('127.') and
+                    not ip.startswith('169.254.') and
+                    ip not in ips):
+                    ips.append(ip)
+        except Exception:
+            pass
+
+        if not ips:
+            ips.append('127.0.0.1')
+
+    except Exception:
+        ips.append('127.0.0.1')
+
+    return ips
+
+def get_primary_ip():
+    ips = get_all_local_ips()
+    for ip in ips:
+        if not ip.startswith('127.') and not ip.startswith('169.254.'):
+            return ip
+    return ips[0] if ips else '127.0.0.1'
+
+all_ips = get_all_local_ips()
+primary_ip = get_primary_ip()
+
+print(f'PRIMARY_IP:{primary_ip}')
+print(f'ALL_IP_COUNT:{len(all_ips)}')
+for i, ip in enumerate(all_ips):
+    print(f'IP_{i}:{ip}')
+")
+
+    # 解析IP信息
+    PRIMARY_IP=$(echo "$IP_INFO" | grep "PRIMARY_IP:" | cut -d: -f2)
+    ALL_IP_COUNT=$(echo "$IP_INFO" | grep "ALL_IP_COUNT:" | cut -d: -f2)
+
     log_info "启动高并发Gunicorn服务器..."
+    log_info "=" * 60
+    log_info "Audio Transcription Service Starting"
+    log_info "Address: http://$HOST:$PORT"
+    log_info "Primary IP: $PRIMARY_IP"
+
+    if [[ "$ALL_IP_COUNT" -gt 1 ]]; then
+        log_info "All Available IP Addresses:"
+        for i in $(seq 0 $((ALL_IP_COUNT-1))); do
+            IP=$(echo "$IP_INFO" | grep "IP_$i:" | cut -d: -f2)
+            log_info "  - http://$IP:$PORT"
+        done
+    else
+        log_info "Local IP: $PRIMARY_IP"
+    fi
+
+    log_info "Workers: $WORKERS"
+    log_info "Max Concurrent Transcriptions: $MAX_CONCURRENT"
+
+    if [[ "$HOST" == "0.0.0.0" ]]; then
+        if [[ "$ALL_IP_COUNT" -gt 1 ]]; then
+            log_info "LAN Access URLs:"
+            for i in $(seq 0 $((ALL_IP_COUNT-1))); do
+                IP=$(echo "$IP_INFO" | grep "IP_$i:" | cut -d: -f2)
+                log_info "  - http://$IP:$PORT"
+            done
+        else
+            log_info "LAN access: http://$PRIMARY_IP:$PORT"
+        fi
+    fi
+
+    log_info "=" * 60
 
     # 创建启动脚本，确保在conda环境中运行
     cat > /tmp/start_server.sh << EOF
@@ -321,7 +464,18 @@ EOF
     if check_status; then
         log_success "高并发服务启动成功"
         log_info "PID: $(cat "$PID_FILE")"
-        log_info "访问地址: http://localhost:$PORT"
+        log_info "本地访问: http://localhost:$PORT"
+
+        if [[ "$ALL_IP_COUNT" -gt 1 ]]; then
+            log_info "局域网访问地址:"
+            for i in $(seq 0 $((ALL_IP_COUNT-1))); do
+                IP=$(echo "$IP_INFO" | grep "IP_$i:" | cut -d: -f2)
+                log_info "  - http://$IP:$PORT"
+            done
+        else
+            log_info "局域网访问: http://$PRIMARY_IP:$PORT"
+        fi
+
         log_info "健康检查: http://localhost:$PORT/api/health"
         log_info "状态监控: http://localhost:$PORT/api/status"
         log_info "最大并发数: $MAX_CONCURRENT"
