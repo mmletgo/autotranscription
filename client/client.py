@@ -71,11 +71,101 @@ else:
                 data = resample_audio(data, fs, _audio_output_rate)
                 fs = _audio_output_rate
 
-            sounddevice.play(data, fs, device=_audio_device)
+            # 尝试播放，如果失败则尝试其他设备
+            devices_to_try = [_audio_device, None]  # 先尝试指定设备，然后是默认设备
+            played = False
+            stream = None
+
+            for device in devices_to_try:
+                try:
+                    # 创建临时音频流进行播放，播放完后立即释放
+                    # 自动检测音频通道数
+                    channels = 1 if len(data.shape) == 1 else data.shape[1]
+
+                    if device is None:
+                        stream = sounddevice.OutputStream(samplerate=fs, channels=channels)
+                        print(f"使用默认设备临时音频流播放提示音 ({channels}通道)")
+                    else:
+                        stream = sounddevice.OutputStream(samplerate=fs, channels=channels, device=device)
+                        print(f"使用设备 {device} 临时音频流播放提示音 ({channels}通道)")
+
+                    # 启动流并写入音频数据
+                    stream.start()
+                    # 确保数据形状正确：(samples, channels)
+                    if len(data.shape) == 1:
+                        # 单声道数据转换为 (samples, 1)
+                        stream.write(data.reshape(-1, 1))
+                    else:
+                        # 多声道数据直接使用
+                        stream.write(data)
+
+                    played = True
+                    break
+                except Exception as e:
+                    print(f"设备 {device} 播放失败，尝试下一个设备: {e}")
+                    if stream is not None:
+                        try:
+                            stream.stop()
+                            stream.close()
+                        except:
+                            pass
+                        stream = None
+                    continue
+
+            if not played:
+                print("警告: 所有设备都播放失败，跳过提示音")
+                return
+
+            # 等待播放完成
+            if wait:
+                try:
+                    if stream is not None:
+                        # 计算播放时间并等待
+                        play_time = len(data) / fs + 0.1  # 音频时长 + 缓冲时间
+                        import time
+                        time.sleep(min(play_time, 1.0))  # 最多等待1秒
+                except Exception:
+                    import time
+                    time.sleep(0.1)
+
+            # 确保流被关闭以释放设备
+            if stream is not None:
+                try:
+                    stream.stop()
+                    stream.close()
+                    print("音频设备已释放")
+                except Exception:
+                    pass
+
         else:
-            sounddevice.play(s, device=_audio_device)
-        if wait:
-            sounddevice.wait()
+            # 处理非tuple数据 - 使用临时流
+            stream = None
+            try:
+                if _audio_device is not None:
+                    stream = sounddevice.OutputStream(samplerate=44100, channels=1, device=_audio_device)
+                    print(f"使用设备 {_audio_device} 临时音频流播放提示音")
+                else:
+                    stream = sounddevice.OutputStream(samplerate=44100, channels=1)
+                    print(f"使用默认设备临时音频流播放提示音")
+
+                stream.start()
+                # 对于非tuple数据，需要转换为适当的格式
+                if hasattr(s, 'shape'):
+                    stream.write(s.reshape(-1, 1) if len(s.shape) == 1 else s)
+                else:
+                    # 假设是其他格式的音频数据
+                    pass
+
+            except Exception as e:
+                print(f"临时流播放失败: {e}")
+            finally:
+                if stream is not None:
+                    try:
+                        stream.stop()
+                        stream.close()
+                        print("音频设备已释放")
+                    except:
+                        pass
 
     def loadwav(filename):
         data, fs = sf.read(filename, dtype="float32")
@@ -84,15 +174,60 @@ else:
     def set_audio_device(device_id):
         global _audio_device
         _audio_device = device_id
+        if device_id is not None:
+            try:
+                import sounddevice
+                device_info = sounddevice.query_devices(device_id)
+                print(f"设置音频输出设备: {device_id} - {device_info['name']}")
+            except Exception:
+                print(f"设置音频输出设备: {device_id}")
+        else:
+            print("设置音频输出设备: 默认设备")
 
     def set_audio_output_rate(rate):
         """设置音频输出采样率"""
         global _audio_output_rate
         _audio_output_rate = rate
+        print(f"设置音频输出采样率: {rate}Hz")
+        # 不设置全局默认采样率，避免影响其他应用
+
+    def find_working_audio_device():
+        """寻找一个可用的音频输出设备"""
+        import sounddevice
+
+        # 优先级：USB设备 > 模拟设备 > HDMI设备
+        preferred_order = []
+
         try:
-            sounddevice.default.samplerate = rate
+            devices = sounddevice.query_devices()
+
+            # 首先找USB设备
+            for i, dev in enumerate(devices):
+                if dev['max_output_channels'] > 0 and 'USB' in dev['name'].upper():
+                    preferred_order.append(i)
+
+            # 然后找模拟/主板设备
+            for i, dev in enumerate(devices):
+                if dev['max_output_channels'] > 0 and any(keyword in dev['name'].upper()
+                    for keyword in ['ANALOG', 'HEADPHONES', 'LINE', 'BKS']):
+                    preferred_order.append(i)
+
+            # 最后找HDMI设备
+            for i, dev in enumerate(devices):
+                if dev['max_output_channels'] > 0 and 'HDMI' in dev['name'].upper():
+                    preferred_order.append(i)
+
+            # 如果没有找到特定设备，使用第一个可用的输出设备
+            if not preferred_order:
+                for i, dev in enumerate(devices):
+                    if dev['max_output_channels'] > 0:
+                        preferred_order.append(i)
+
+            return preferred_order[0] if preferred_order else None
+
         except Exception as e:
-            print(f"设置默认输出采样率失败: {e}")
+            print(f"搜索音频设备失败: {e}")
+            return None
 
 
 class SpeechTranscriberClient:
@@ -1221,14 +1356,14 @@ class App:
             input_rate, output_rate = initialize_audio_config(
                 input_device=None,  # 使用默认输入设备
                 output_device=(
-                    args.audio_device if platform.system() != "Windows" else None
+                    args.audio_device if platform.system() != "Windows" and args.audio_device is not None else None
                 ),
                 preferred_input_rate=16000,  # 语音识别偏好采样率
                 preferred_output_rate=44100,  # 播放偏好采样率
             )
             print(f"✓ 音频配置初始化完成: 输入={input_rate}Hz, 输出={output_rate}Hz")
 
-            # 设置Linux系统的音频输出采样率
+            # 设置音频输出参数（仅用于提示音播放）
             if platform.system() != "Windows":
                 set_audio_output_rate(output_rate)
 
@@ -1236,16 +1371,33 @@ class App:
             print(f"⚠ 音频配置初始化失败，使用默认配置: {e}")
             print("将使用固定采样率: 输入=16000Hz, 输出=44100Hz")
 
-        # Set audio output device if specified
-        if platform.system() != "Windows" and args.audio_device is not None:
-            try:
-                import sounddevice
-
-                set_audio_device(args.audio_device)
-                device_info = sounddevice.query_devices(args.audio_device)
-                print(f"使用音频设备 {args.audio_device}: {device_info['name']}")
-            except Exception as e:
-                print(f"Warning: Failed to set audio device {args.audio_device}: {e}")
+        # Set audio output device if specified (仅用于提示���)
+        if platform.system() != "Windows":
+            if args.audio_device is not None:
+                # 使用指定的设备
+                try:
+                    set_audio_device(args.audio_device)
+                    device_info = sounddevice.query_devices(args.audio_device)
+                    print(f"提示音使用指定音频设备 {args.audio_device}: {device_info['name']}")
+                except Exception as e:
+                    print(f"Warning: Failed to set audio device {args.audio_device}: {e}")
+                    # 回退到自动选择
+                    auto_device = find_working_audio_device()
+                    if auto_device is not None:
+                        set_audio_device(auto_device)
+                        print(f"提示音改用自动选择的设备: {auto_device}")
+                    else:
+                        set_audio_device(None)
+                        print("提示音使用默认音频设备")
+            else:
+                # 自动选择设备
+                auto_device = find_working_audio_device()
+                if auto_device is not None:
+                    set_audio_device(auto_device)
+                    print(f"提示音自动选择音频设备: {auto_device}")
+                else:
+                    set_audio_device(None)
+                    print("提示音使用默认音频设备")
 
         # Set initial prompt - use strong prompt to reduce hallucinations
         initial_prompt = args.initial_prompt
@@ -1332,8 +1484,10 @@ class App:
         pass
 
     def beep(self, k, wait=True):
+        """播放提示音"""
         if self.enable_beep:
             try:
+                # 对于提示音，我们需要等待播放完成以确保用户能听到
                 playsound(self.SOUND_EFFECTS[k], wait=wait)
             except Exception as e:
                 print(f"Warning: Failed to play beep sound: {e}")
@@ -1346,7 +1500,7 @@ class App:
                 self.timer.start()
             self.m.start_recording()
             # Play beep sound after state transition (non-blocking)
-            self.beep("start_recording", wait=False)
+            self._play_beep_async("start_recording")
             return True
         return False
 
@@ -1355,9 +1509,22 @@ class App:
             self.recorder.stop()
             if self.timer is not None:
                 self.timer.cancel()
-            self.beep("finish_recording", wait=False)
+            self._play_beep_async("finish_recording")
             return True
         return False
+
+    def _play_beep_async(self, sound_name):
+        """异步播放提示音，不阻塞主流程"""
+        if self.enable_beep:
+            import threading
+            def play_sound():
+                try:
+                    self.beep(sound_name, wait=True)
+                except Exception:
+                    pass  # 静默忽略提示音错误
+
+            thread = threading.Thread(target=play_sound, daemon=True)
+            thread.start()
 
     def timer_stop(self):
         print("Timer stopped")

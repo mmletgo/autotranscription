@@ -282,13 +282,9 @@ class AudioConfigManager:
             preferred_output_rate=preferred_output_rate
         )
 
-        # 在Linux系统下设置sounddevice默认采样率
+        # 不设置全局默认采样率，避免影响其他应用程序
         if platform.system() != "Windows":
-            try:
-                sounddevice.default.samplerate = self._optimal_output_rate
-                print(f"设置sounddevice默认采样率为: {self._optimal_output_rate} Hz")
-            except Exception as e:
-                print(f"设置sounddevice默认采样率失败: {e}")
+            print(f"检测到最佳输出采样率: {self._optimal_output_rate} Hz (仅用于提示音)")
 
         return self._optimal_input_rate, self._optimal_output_rate
 
