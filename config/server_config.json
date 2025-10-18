@@ -12,6 +12,18 @@
   "log_level": "INFO",
   "max_concurrent_transcriptions": 16,
   "queue_size": 100,
+  "llm": {
+    "enabled": false,
+    "api_url": "",
+    "api_key": "",
+    "model": "",
+    "timeout": 30,
+    "max_retries": 2,
+    "retry_delay": 1,
+    "temperature": 0.3,
+    "max_tokens": 2000,
+    "system_prompt": "You are a helpful assistant. Your task is to polish and correct the transcribed text. Keep the original meaning and improve grammar, punctuation, and clarity. Return only the corrected text without any explanation."
+  },
   "_comments": {
     "model_size": "Model size: tiny, base, small, medium, large-v1, large-v2, large-v3",
     "device": "Device: cpu, cuda, auto",
@@ -24,6 +36,18 @@
     "timeout": "Request timeout in seconds",
     "log_level": "Logging level: DEBUG, INFO, WARNING, ERROR",
     "max_concurrent_transcriptions": "Maximum concurrent transcription requests",
-    "queue_size": "Request queue size for load balancing"
+    "queue_size": "Request queue size for load balancing",
+    "llm": {
+      "enabled": "Enable LLM service for text polishing and correction",
+      "api_url": "LLM API endpoint URL (e.g., http://localhost:8000 for ModelScope, Ollama, etc.)",
+      "api_key": "API key for authentication (Bearer token)",
+      "model": "Model name to use (e.g., qwen-turbo, gpt-3.5-turbo, etc.)",
+      "timeout": "LLM request timeout in seconds",
+      "max_retries": "Maximum retry attempts for LLM API",
+      "retry_delay": "Delay between retries in seconds",
+      "temperature": "Sampling temperature (0.0-1.0): lower for more deterministic output",
+      "max_tokens": "Maximum tokens in LLM response",
+      "system_prompt": "System prompt to guide the LLM behavior"
+    }
   }
 }

@@ -564,7 +564,7 @@ install_python_deps() {
     log_info "安装核心应用包..."
 
     # 服务端依赖
-    pip install faster-whisper psutil
+    pip install faster-whisper psutil openai
 
     # 客户端依赖
     pip install soundfile pyaudio pynput transitions pyperclip sounddevice

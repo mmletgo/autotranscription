@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import gc
 from contextlib import contextmanager
 import socket
+from llm_service import LLMService
 
 # Configure logging
 logging.basicConfig(
@@ -36,16 +37,18 @@ active_transcriptions = 0  # 活跃转写计数
 transcription_executor = None  # 线程池
 model = None
 config = None
+llm_service = None  # LLM服务实例
 lock = threading.Lock()
 
 # 确保在worker进程启动时初始化模型
 def init_worker():
     """Gunicorn worker初始化函数"""
     logger.info("Initializing Gunicorn worker...")
-    global model, config
+    global model, config, llm_service
     try:
         config = load_config()
         initialize_model()
+        initialize_llm_service()
         logger.info("Worker initialization completed successfully")
     except Exception as e:
         logger.error(f"Worker initialization failed: {e}", exc_info=True)
@@ -133,6 +136,27 @@ def initialize_model():
             logger.error(f"Failed to load base model: {fallback_error}")
             logger.error(f"Base model error details: {str(fallback_error)}", exc_info=True)
             raise fallback_error
+
+
+# Initialize LLM Service
+def initialize_llm_service():
+    global llm_service
+    try:
+        llm_config = config.get("llm", {})
+        llm_service = LLMService(llm_config)
+
+        # Validate configuration
+        is_valid, error_msg = llm_service.validate_config()
+        if not is_valid:
+            logger.warning(f"LLM service validation failed: {error_msg}")
+        elif llm_service.is_enabled():
+            logger.info(f"LLM service initialized - Model: {llm_service.model}")
+        else:
+            logger.info("LLM service is disabled")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM service: {e}", exc_info=True)
+        llm_service = None
 
 
 # Configure CORS
@@ -326,19 +350,46 @@ class TranscriptionService:
                     segment_list.append(segment_data)
                     full_text += segment.text
 
+                # Try to polish text with LLM if enabled
+                polished_text = full_text.strip()
+                llm_used = False
+                llm_error = None
+
+                if llm_service and llm_service.is_enabled():
+                    logger.info(f"Attempting to polish text with LLM (ID: {request_id})")
+                    polished_result, success, error_msg = llm_service.polish_text(
+                        full_text.strip()
+                    )
+
+                    if success and polished_result:
+                        polished_text = polished_result
+                        llm_used = True
+                        logger.info(f"Text polished successfully by LLM (ID: {request_id})")
+                    else:
+                        # LLM failed, use original text
+                        logger.warning(
+                            f"LLM polishing failed for request {request_id}: {error_msg}. "
+                            "Using original text as fallback."
+                        )
+                        llm_error = error_msg
+
                 result = {
                     "success": True,
                     "request_id": request_id,
                     "language": info.language,
                     "language_probability": info.language_probability,
                     "segments": segment_list,
-                    "text": full_text.strip(),
+                    "text": polished_text,
+                    "original_text": full_text.strip(),  # 保存原始文本供参考
+                    "llm_used": llm_used,
+                    "llm_error": llm_error if llm_error else None,
                     "duration": info.duration if hasattr(info, "duration") else None,
                     "processing_time": None,  # 将在外部计算
                 }
 
                 logger.info(
-                    f"Transcription completed (ID: {request_id}): {len(segment_list)} segments"
+                    f"Transcription completed (ID: {request_id}): {len(segment_list)} segments, "
+                    f"LLM polished: {llm_used}"
                 )
                 return result
 
@@ -705,6 +756,75 @@ def transcribe_binary():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/llm/health", methods=["GET"])
+def llm_health_check():
+    """LLM服务健康检查端点"""
+    try:
+        ensure_initialized()
+
+        if llm_service is None:
+            return jsonify(
+                {
+                    "status": "disabled",
+                    "message": "LLM service is not initialized",
+                    "success": False,
+                }
+            ), 200
+
+        if not llm_service.is_enabled():
+            return jsonify(
+                {
+                    "status": "disabled",
+                    "message": "LLM service is disabled in configuration",
+                    "success": True,
+                }
+            ), 200
+
+        # Validate configuration
+        is_valid, error_msg = llm_service.validate_config()
+        if not is_valid:
+            return jsonify(
+                {
+                    "status": "misconfigured",
+                    "message": error_msg,
+                    "success": False,
+                }
+            ), 400
+
+        # Check API health
+        is_healthy, status_msg = llm_service.health_check()
+        if is_healthy:
+            return jsonify(
+                {
+                    "status": "healthy",
+                    "message": status_msg,
+                    "model": llm_service.model,
+                    "api_url": llm_service.api_url,
+                    "success": True,
+                }
+            ), 200
+        else:
+            return jsonify(
+                {
+                    "status": "unhealthy",
+                    "message": status_msg,
+                    "model": llm_service.model,
+                    "api_url": llm_service.api_url,
+                    "success": False,
+                }
+            ), 503
+
+    except Exception as e:
+        logger.error(f"LLM health check failed: {str(e)}", exc_info=True)
+        return jsonify(
+            {
+                "status": "error",
+                "message": str(e),
+                "success": False,
+            }
+        ), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"success": False, "error": "Endpoint not found"}), 404
@@ -717,11 +837,12 @@ def internal_error(error):
 
 def ensure_initialized():
     """确保在worker进程中模型和配置已初始化"""
-    global config, model, transcription_executor
+    global config, model, transcription_executor, llm_service
     if config is None or model is None:
         logger.info("Initializing model and config in worker process...")
         config = load_config()
         initialize_model()
+        initialize_llm_service()
 
         # 确保转写工作线程已启动
         if transcription_executor is None:
@@ -731,13 +852,16 @@ def ensure_initialized():
 
 def main():
     """启动服务器"""
-    global config, model
+    global config, model, llm_service
 
     # 加载配置
     config = load_config()
 
     # 初始化模型
     initialize_model()
+
+    # 初始化LLM服务
+    initialize_llm_service()
 
     # 配置CORS
     configure_cors()
