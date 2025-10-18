@@ -30,6 +30,7 @@ High-concurrency client-server architecture speech-to-text system based on Faste
 - 📝 **Real-time Output**: Supports streaming transcription results
 - 🇨🇳 **Chinese Optimization**: Optimized for Chinese speech recognition
 - 🧠 **Smart Memory Management**: Automatic GPU memory cleanup and optimization
+- 🤖 **LLM Text Polishing** ✨ **NEW**: Automatically polish and correct recognized text using OpenAI API-compatible LLM services (ModelScope/OpenAI/Ollama, etc.), with automatic fallback to original text on failure
 
 ## Best Practices
 
@@ -159,6 +160,88 @@ Choose the appropriate installation mode based on different deployment scenarios
 - **LAN Deployment**: Data stays within internal network, ensuring information security
 - **Access Control**: Configurable firewall rules to restrict access permissions
 - **Audit Logging**: Complete transcription records and usage statistics
+
+## 🤖 LLM Text Polishing Feature
+
+### What is LLM Text Polishing?
+
+The project now supports automatic text polishing and correction using OpenAI API-compatible LLM services!
+
+✨ **Features**:
+- 🔧 **Automatic Correction**: Fix recognition errors, grammar issues, and punctuation
+- 🎯 **Multi-LLM Support**: ModelScope (recommended for Chinese), OpenAI, Ollama, LM Studio, etc.
+- 💾 **Automatic Fallback**: Automatically use original text if LLM fails, ensuring service reliability
+- 🔄 **Smart Retry**: Exponential backoff retry strategy for handling API rate limits and transient failures
+- 🇨🇳 **Chinese Optimization**: Special support for ModelScope's Qwen models, perfect for Chinese text processing
+
+### Quick Enable
+
+1. **Configure LLM Service** (Edit `config/server_config.json`):
+```json
+{
+  "llm": {
+    "enabled": true,
+    "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "sk-your-api-key",
+    "model": "qwen-turbo"
+  }
+}
+```
+
+2. **Restart Server**:
+```bash
+./scripts/manage.sh server restart
+```
+
+3. **Verify Status**:
+```bash
+curl http://localhost:5000/api/llm/health
+```
+
+### Supported LLM Services
+
+| Service | Best For | Features |
+|---------|----------|----------|
+| **ModelScope** (Recommended) | Chinese | Cost-effective, excellent quality, offline support |
+| **OpenAI** | General Purpose | Powerful, supports GPT-4 and advanced models |
+| **Ollama** | Local Deployment | Fully offline, no API key required |
+| **LM Studio** | Local Deployment | User-friendly interface, multi-model support |
+
+### Documentation
+
+📚 **Detailed LLM Documentation**:
+- [LLM Quick Start](docs/LLM_QUICK_START.md) - Get started in 5 minutes
+
+### Workflow
+
+```
+Audio Input
+  ↓
+Whisper Transcription
+  ↓
+Original Text
+  ↓
+LLM Polishing (Optional, supports fallback)
+  ↓
+Final Text (Polished or original)
+  ↓
+Return to Client
+```
+
+### API Response Example
+
+With LLM enabled, the transcription API returns additional information:
+
+```json
+{
+  "text": "Polished text (or original if LLM fails)",
+  "original_text": "Original recognized text",
+  "llm_used": true,
+  "llm_error": null,
+  "language": "zh",
+  "duration": 5.2
+}
+```
 
 ## Quick Start
 

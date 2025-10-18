@@ -30,6 +30,7 @@
 - 📝 **实时输出**: 支持流式转录结果
 - 🇨🇳 **中文优化**: 针对中文语音识别优化
 - 🧠 **智能内存管理**: 自动 GPU 内存清理和优化
+- 🤖 **LLM 文本润色** ✨ **新功能**: 使用 OpenAI API 兼容的 LLM (ModelScope/OpenAI等) 自动润色和纠正识别文本，支持失败自动回退到原始文本
 
 ## 最佳实践
 
@@ -159,6 +160,88 @@ AutoTranscription 采用客户端-服务器架构，推荐以下部署方式以�
 - **局域网部署**: 数据不出内网，保证信息安全
 - **访问控制**: 可配置防火墙规则限制访问权限
 - **日志审计**: 完整的转写记录和使用统计
+
+## 🤖 LLM 文本润色功能
+
+### 什么是 LLM 文本润色？
+
+本项目现已支持使用 OpenAI API 兼容的 LLM 服务自动润色和纠正语音识别生成的文本！
+
+✨ **特性**:
+- 🔧 **自动纠正**: 修复识别错误、语法错误和标点符号
+- 🎯 **多 LLM 支持**: ModelScope (推荐中文), OpenAI, Ollama, LM Studio 等
+- 💾 **自动降级**: LLM 失败时自动使用原始文本，确保服务可靠性
+- 🔄 **智能重试**: 指数退避重试策略，处理 API 限额和临时故障
+- 🇨🇳 **中文优化**: 特别支持 ModelScope 的 Qwen 模型，适合中文处理
+
+### 快速启用
+
+1. **配置 LLM 服务** (编辑 `config/server_config.json`):
+```json
+{
+  "llm": {
+    "enabled": true,
+    "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "sk-your-api-key",
+    "model": "qwen-turbo"
+  }
+}
+```
+
+2. **重启服务器**:
+```bash
+./scripts/manage.sh server restart
+```
+
+3. **验证状态**:
+```bash
+curl http://localhost:5000/api/llm/health
+```
+
+### 支持的 LLM 服务
+
+| 服务 | 推荐用途 | 特点 |
+|------|---------|------|
+| **ModelScope** (推荐) | 中文处理 | 成本低，效果好，支持离线部署 |
+| **OpenAI** | 通用 | 功能强大，支持 GPT-4 等高端模型 |
+| **Ollama** | 本地部署 | 完全离线，无需 API key |
+| **LM Studio** | 本地部署 | 界面友好，支持多种模型 |
+
+### 详细文档
+
+📚 **LLM 功能详细说明**:
+- [LLM 快速开始](docs/LLM_QUICK_START.md) - 5 分钟快速配置
+
+### 工作流程
+
+```
+音频输入
+  ↓
+Whisper 转写
+  ↓
+原始文本
+  ↓
+LLM 润色 (可选，支持失败回退)
+  ↓
+最终文本 (润色后或原始)
+  ↓
+返回给客户端
+```
+
+### API 响应示例
+
+启用 LLM 后，转写 API 返回额外的信息：
+
+```json
+{
+  "text": "润色后的文本（或原始文本如果 LLM 失败）",
+  "original_text": "原始识别文本",
+  "llm_used": true,
+  "llm_error": null,
+  "language": "zh",
+  "duration": 5.2
+}
+```
 
 ## 快速开始
 

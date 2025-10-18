@@ -37,7 +37,7 @@
 {
   "llm": {
     "enabled": true,
-    "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_url": "https://api-inference.modelscope.cn/v1/",
     "api_key": "sk-xxxxxxxxx",
     "model": "qwen-turbo",
     "temperature": 0.3,
@@ -46,7 +46,7 @@
 }
 ```
 
-获取API密钥：https://dashscope.console.aliyun.com
+获取API密钥：https://www.modelscope.cn/docs/model-service/API-Inference/intro
 
 #### OpenAI
 
@@ -193,20 +193,3 @@ curl -X POST http://localhost:5000/api/transcribe \
   }
 }
 ```
-
-## More Information
-
-详细的LLM集成指南请参阅：`docs/LLM_INTEGRATION_GUIDE.md`
-
-## File Changes Summary
-
-新增文件：
-- `server/llm_service.py` - LLM服务模块
-- `docs/LLM_INTEGRATION_GUIDE.md` - 详细集成指南
-- `docs/LLM_QUICK_START.md` - 快速开始指南
-- `config/server_config.example.json` - 配置示例
-
-修改文件：
-- `config/server_config.json` - 添加LLM配置部分
-- `server/transcription_server.py` - 集成LLM处理和健康检查端点
-- `CLAUDE.md` - 更新项目文档
