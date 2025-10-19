@@ -5,6 +5,151 @@ Audio Transcription Server
 Provides REST API for speech-to-text with concurrent processing and queue management
 """
 
+# 在导入任何 CUDA/cuDNN 相关库之前设置环境变量
+import os
+import sys
+import subprocess
+import json as json_module
+
+
+def _setup_cuda_env_early():
+    """在导入 CUDA 库之前设置环境变量并预加载 cuDNN 库"""
+    import ctypes
+    import glob
+
+    try:
+        # 获取 conda 环境路径
+        conda_prefix = os.environ.get("CONDA_PREFIX")
+
+        if not conda_prefix:
+            # 尝试通过 conda 命令获取
+            try:
+                result = subprocess.run(
+                    ["conda", "info", "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    conda_info = json_module.loads(result.stdout)
+                    conda_prefix = conda_info.get("conda_prefix")
+            except Exception:
+                pass
+
+        if conda_prefix:
+            # 尝试多个可能的 cuDNN 库路径
+            cudnn_paths = [
+                os.path.join(
+                    conda_prefix,
+                    "lib",
+                    "python3.10",
+                    "site-packages",
+                    "nvidia",
+                    "cudnn",
+                    "lib",
+                ),
+                os.path.join(
+                    conda_prefix,
+                    "lib",
+                    "python3.11",
+                    "site-packages",
+                    "nvidia",
+                    "cudnn",
+                    "lib",
+                ),
+                os.path.join(
+                    conda_prefix,
+                    "lib",
+                    "python3.9",
+                    "site-packages",
+                    "nvidia",
+                    "cudnn",
+                    "lib",
+                ),
+                os.path.join(
+                    conda_prefix,
+                    "lib",
+                    "python3.12",
+                    "site-packages",
+                    "nvidia",
+                    "cudnn",
+                    "lib",
+                ),
+                os.path.join(conda_prefix, "lib"),
+            ]
+
+            # 同时检查 conda 的 lib 目录
+            conda_lib = os.path.join(conda_prefix, "lib")
+
+            # 收集所有有效路径
+            all_valid_paths = []
+            for path in cudnn_paths:
+                if os.path.exists(path):
+                    all_valid_paths.append(path)
+
+            # 确保 conda lib 目录在列表中
+            if os.path.exists(conda_lib) and conda_lib not in all_valid_paths:
+                all_valid_paths.append(conda_lib)
+
+            if all_valid_paths:
+                # 设置 LD_LIBRARY_PATH (包含所有有效路径)
+                current_ld = os.environ.get("LD_LIBRARY_PATH", "")
+                new_paths = ":".join(all_valid_paths)
+                new_ld = f"{new_paths}:{current_ld}" if current_ld else new_paths
+                os.environ["LD_LIBRARY_PATH"] = new_ld
+
+                # 对 macOS 也设置 DYLD_LIBRARY_PATH
+                if sys.platform == "darwin":
+                    current_dyld = os.environ.get("DYLD_LIBRARY_PATH", "")
+                    new_dyld = (
+                        f"{new_paths}:{current_dyld}" if current_dyld else new_paths
+                    )
+                    os.environ["DYLD_LIBRARY_PATH"] = new_dyld
+
+                # 使用 ctypes 显式预加载 cuDNN 库文件
+                # 这是关键步骤：在 faster_whisper 加载之前强制加载 cuDNN
+                cudnn_libs_loaded = []
+                for path in all_valid_paths:
+                    try:
+                        # 查找所有 cuDNN 相关的 .so 文件
+                        cudnn_patterns = [
+                            "libcudnn.so*",
+                            "libcudnn_*.so*",
+                            "libcudnn_ops*.so*",
+                            "libcudnn_cnn*.so*",
+                        ]
+
+                        for pattern in cudnn_patterns:
+                            lib_files = glob.glob(os.path.join(path, pattern))
+                            for lib_file in lib_files:
+                                try:
+                                    # 使用 RTLD_GLOBAL 确保库符号全局可见
+                                    ctypes.CDLL(lib_file, mode=ctypes.RTLD_GLOBAL)
+                                    cudnn_libs_loaded.append(os.path.basename(lib_file))
+                                except Exception:
+                                    continue
+                    except Exception:
+                        continue
+
+                # 记录预加载的库（仅在有库被加载时输出）
+                if cudnn_libs_loaded:
+                    print(
+                        f"[CUDA Setup] Successfully preloaded {len(cudnn_libs_loaded)} cuDNN libraries",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+
+    except Exception as e:
+        print(
+            f"[CUDA Setup] Warning during early CUDA setup: {e}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+# 在导入 faster_whisper 前设置环境
+_setup_cuda_env_early()
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
@@ -12,7 +157,6 @@ import logging
 from faster_whisper import WhisperModel
 import io
 import json
-import os
 from datetime import datetime
 import threading
 import queue
@@ -40,12 +184,125 @@ config = None
 llm_service = None  # LLM服务实例
 lock = threading.Lock()
 
+
+def setup_cuda_environment():
+    """设置 CUDA 和 cuDNN 环境变量（修复开发服务器库加载问题）"""
+    import subprocess
+
+    try:
+        # 获取 conda 环境路径
+        conda_prefix = os.environ.get("CONDA_PREFIX")
+
+        if not conda_prefix:
+            # 尝试通过 conda 命令获取环境信息
+            try:
+                result = subprocess.run(
+                    ["conda", "info", "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    conda_info = json.loads(result.stdout)
+                    conda_prefix = conda_info.get("conda_prefix")
+            except Exception:
+                pass
+
+        if not conda_prefix:
+            logger.warning(
+                "Could not determine conda environment path, skipping CUDA environment setup"
+            )
+            return
+
+        # 构建 cuDNN 库路径（支持多个 Python 版本）
+        cudnn_paths = [
+            os.path.join(
+                conda_prefix,
+                "lib",
+                "python3.10",
+                "site-packages",
+                "nvidia",
+                "cudnn",
+                "lib",
+            ),
+            os.path.join(
+                conda_prefix,
+                "lib",
+                "python3.11",
+                "site-packages",
+                "nvidia",
+                "cudnn",
+                "lib",
+            ),
+            os.path.join(
+                conda_prefix,
+                "lib",
+                "python3.9",
+                "site-packages",
+                "nvidia",
+                "cudnn",
+                "lib",
+            ),
+            os.path.join(
+                conda_prefix,
+                "lib",
+                "python3.12",
+                "site-packages",
+                "nvidia",
+                "cudnn",
+                "lib",
+            ),
+            os.path.join(conda_prefix, "lib"),  # 备用路径
+        ]
+
+        # 查找有效的 cuDNN 库路径
+        valid_cudnn_path = None
+        for path in cudnn_paths:
+            if os.path.exists(path):
+                logger.info(f"Found cuDNN library path: {path}")
+                valid_cudnn_path = path
+                break
+
+        if valid_cudnn_path:
+            # 设置 LD_LIBRARY_PATH（Linux/Unix）
+            current_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+            new_ld_path = (
+                f"{valid_cudnn_path}:{current_ld_path}"
+                if current_ld_path
+                else valid_cudnn_path
+            )
+            os.environ["LD_LIBRARY_PATH"] = new_ld_path
+            logger.info(f"Set LD_LIBRARY_PATH to include: {valid_cudnn_path}")
+
+            # 对于 macOS，也设置 DYLD_LIBRARY_PATH
+            if os.name == "posix":
+                import platform
+
+                if platform.system() == "Darwin":
+                    current_dyld_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+                    new_dyld_path = (
+                        f"{valid_cudnn_path}:{current_dyld_path}"
+                        if current_dyld_path
+                        else valid_cudnn_path
+                    )
+                    os.environ["DYLD_LIBRARY_PATH"] = new_dyld_path
+                    logger.info(f"Set DYLD_LIBRARY_PATH for macOS: {valid_cudnn_path}")
+        else:
+            logger.warning("cuDNN library path not found in conda environment")
+
+    except Exception as e:
+        logger.warning(f"Failed to setup CUDA environment: {e}")
+        # 继续执行，不中断启动
+
+
 # 确保在worker进程启动时初始化模型
 def init_worker():
     """Gunicorn worker初始化函数"""
     logger.info("Initializing Gunicorn worker...")
     global model, config, llm_service
     try:
+        # 设置 CUDA 环境（在 worker 进程启动时）
+        setup_cuda_environment()
         config = load_config()
         initialize_model()
         initialize_llm_service()
@@ -134,7 +391,9 @@ def initialize_model():
 
         except Exception as fallback_error:
             logger.error(f"Failed to load base model: {fallback_error}")
-            logger.error(f"Base model error details: {str(fallback_error)}", exc_info=True)
+            logger.error(
+                f"Base model error details: {str(fallback_error)}", exc_info=True
+            )
             raise fallback_error
 
 
@@ -189,7 +448,11 @@ def get_all_local_ips():
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 default_ip = s.getsockname()[0]
-                if default_ip not in ips and not default_ip.startswith("127.") and not default_ip.startswith("169.254."):
+                if (
+                    default_ip not in ips
+                    and not default_ip.startswith("127.")
+                    and not default_ip.startswith("169.254.")
+                ):
                     ips.insert(0, default_ip)  # 插入到开头，因为这是主要网络接口
         except Exception as e:
             logger.warning(f"获取默认路由IP失败: {e}")
@@ -197,14 +460,19 @@ def get_all_local_ips():
         # 方法2：使用hostname -I命令获取所有IP（最可靠）
         try:
             import subprocess
-            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+
+            result = subprocess.run(
+                ["hostname", "-I"], capture_output=True, text=True, timeout=5
+            )
             if result.returncode == 0:
                 hostname_ips = result.stdout.strip().split()
                 for ip in hostname_ips:
-                    if (ip not in ips and
-                        not ip.startswith("127.") and
-                        not ip.startswith("169.254.") and
-                        ":" not in ip):  # 排除IPv6
+                    if (
+                        ip not in ips
+                        and not ip.startswith("127.")
+                        and not ip.startswith("169.254.")
+                        and ":" not in ip
+                    ):  # 排除IPv6
                         ips.append(ip)
         except Exception as e:
             logger.warning(f"通过hostname -I获取IP地址失败: {e}")
@@ -212,20 +480,26 @@ def get_all_local_ips():
         # 方法3：通过ip命令获取所有IP（Linux系统）
         try:
             import subprocess
-            result = subprocess.run(['ip', 'addr', 'show'], capture_output=True, text=True, timeout=5)
+
+            result = subprocess.run(
+                ["ip", "addr", "show"], capture_output=True, text=True, timeout=5
+            )
             if result.returncode == 0:
                 import re
+
                 # 使用正则表达式提取IPv4地址
-                ip_pattern = r'inet (\d+\.\d+\.\d+\.\d+/\d+)'
-                for line in result.stdout.split('\n'):
+                ip_pattern = r"inet (\d+\.\d+\.\d+\.\d+/\d+)"
+                for line in result.stdout.split("\n"):
                     match = re.search(ip_pattern, line)
                     if match:
                         ip_with_mask = match.group(1)
-                        ip = ip_with_mask.split('/')[0]  # 去掉子网掩码
-                        if (ip not in ips and
-                            not ip.startswith("127.") and
-                            not ip.startswith("169.254.") and
-                            not ip.startswith("0.")):
+                        ip = ip_with_mask.split("/")[0]  # 去掉子网掩码
+                        if (
+                            ip not in ips
+                            and not ip.startswith("127.")
+                            and not ip.startswith("169.254.")
+                            and not ip.startswith("0.")
+                        ):
                             ips.append(ip)
         except Exception as e:
             logger.warning(f"通过ip命令获取IP地址失败: {e}")
@@ -233,19 +507,25 @@ def get_all_local_ips():
         # 方法4：通过ifconfig命令获取所有IP（备用）
         try:
             import subprocess
-            result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=5)
+
+            result = subprocess.run(
+                ["ifconfig"], capture_output=True, text=True, timeout=5
+            )
             if result.returncode == 0:
                 import re
+
                 # 使用正则表达式提取IPv4地址
-                ip_pattern = r'inet (\d+\.\d+\.\d+\.\d+)'
-                for line in result.stdout.split('\n'):
+                ip_pattern = r"inet (\d+\.\d+\.\d+\.\d+)"
+                for line in result.stdout.split("\n"):
                     match = re.search(ip_pattern, line)
                     if match:
                         ip = match.group(1)
-                        if (ip not in ips and
-                            not ip.startswith("127.") and
-                            not ip.startswith("169.254.") and
-                            not ip.startswith("0.")):
+                        if (
+                            ip not in ips
+                            and not ip.startswith("127.")
+                            and not ip.startswith("169.254.")
+                            and not ip.startswith("0.")
+                        ):
                             ips.append(ip)
         except Exception as e:
             logger.warning(f"通过ifconfig获取IP地址失败: {e}")
@@ -256,10 +536,12 @@ def get_all_local_ips():
             addr_info = socket.getaddrinfo(hostname, None)
             for info in addr_info:
                 ip = info[4][0]
-                if (":" not in ip and  # 排除IPv6
-                    not ip.startswith("127.") and  # 排除本地回环
-                    not ip.startswith("169.254.") and  # 排除链路本地地址
-                    ip not in ips):
+                if (
+                    ":" not in ip  # 排除IPv6
+                    and not ip.startswith("127.")  # 排除本地回环
+                    and not ip.startswith("169.254.")  # 排除链路本地地址
+                    and ip not in ips
+                ):
                     ips.append(ip)
         except Exception as e:
             logger.warning(f"通过主机名获取IP地址失败: {e}")
@@ -356,7 +638,9 @@ class TranscriptionService:
                 llm_error = None
 
                 if llm_service and llm_service.is_enabled():
-                    logger.info(f"Attempting to polish text with LLM (ID: {request_id})")
+                    logger.info(
+                        f"Attempting to polish text with LLM (ID: {request_id})"
+                    )
                     polished_result, success, error_msg = llm_service.polish_text(
                         full_text.strip()
                     )
@@ -364,7 +648,9 @@ class TranscriptionService:
                     if success and polished_result:
                         polished_text = polished_result
                         llm_used = True
-                        logger.info(f"Text polished successfully by LLM (ID: {request_id})")
+                        logger.info(
+                            f"Text polished successfully by LLM (ID: {request_id})"
+                        )
                     else:
                         # LLM failed, use original text
                         logger.warning(
@@ -474,24 +760,30 @@ def health_check():
         # 检查模型是否已加载
         if model is None:
             logger.error("Health check failed: Model not loaded")
-            return jsonify(
-                {
-                    "status": "unhealthy",
-                    "error": "Model not loaded",
-                    "success": False
-                }
-            ), 503
+            return (
+                jsonify(
+                    {
+                        "status": "unhealthy",
+                        "error": "Model not loaded",
+                        "success": False,
+                    }
+                ),
+                503,
+            )
 
         # 检查配置是否加载
         if config is None:
             logger.error("Health check failed: Configuration not loaded")
-            return jsonify(
-                {
-                    "status": "unhealthy",
-                    "error": "Configuration not loaded",
-                    "success": False
-                }
-            ), 503
+            return (
+                jsonify(
+                    {
+                        "status": "unhealthy",
+                        "error": "Configuration not loaded",
+                        "success": False,
+                    }
+                ),
+                503,
+            )
 
         return jsonify(
             {
@@ -509,13 +801,7 @@ def health_check():
         )
     except Exception as e:
         logger.error(f"Health check failed with error: {str(e)}", exc_info=True)
-        return jsonify(
-            {
-                "status": "unhealthy",
-                "error": str(e),
-                "success": False
-            }
-        ), 500
+        return jsonify({"status": "unhealthy", "error": str(e), "success": False}), 500
 
 
 @app.route("/api/config", methods=["GET"])
@@ -541,12 +827,7 @@ def get_config():
         )
     except Exception as e:
         logger.error(f"Config check failed with error: {str(e)}", exc_info=True)
-        return jsonify(
-            {
-                "error": str(e),
-                "success": False
-            }
-        ), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
 
 @app.route("/api/status", methods=["GET"])
@@ -563,13 +844,7 @@ def get_status():
         )
     except Exception as e:
         logger.error(f"Status check failed with error: {str(e)}", exc_info=True)
-        return jsonify(
-            {
-                "status": "error",
-                "error": str(e),
-                "success": False
-            }
-        ), 500
+        return jsonify({"status": "error", "error": str(e), "success": False}), 500
 
 
 @app.route("/api/transcribe", methods=["POST"])
@@ -763,66 +1038,84 @@ def llm_health_check():
         ensure_initialized()
 
         if llm_service is None:
-            return jsonify(
-                {
-                    "status": "disabled",
-                    "message": "LLM service is not initialized",
-                    "success": False,
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "status": "disabled",
+                        "message": "LLM service is not initialized",
+                        "success": False,
+                    }
+                ),
+                200,
+            )
 
         if not llm_service.is_enabled():
-            return jsonify(
-                {
-                    "status": "disabled",
-                    "message": "LLM service is disabled in configuration",
-                    "success": True,
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "status": "disabled",
+                        "message": "LLM service is disabled in configuration",
+                        "success": True,
+                    }
+                ),
+                200,
+            )
 
         # Validate configuration
         is_valid, error_msg = llm_service.validate_config()
         if not is_valid:
-            return jsonify(
-                {
-                    "status": "misconfigured",
-                    "message": error_msg,
-                    "success": False,
-                }
-            ), 400
+            return (
+                jsonify(
+                    {
+                        "status": "misconfigured",
+                        "message": error_msg,
+                        "success": False,
+                    }
+                ),
+                400,
+            )
 
         # Check API health
         is_healthy, status_msg = llm_service.health_check()
         if is_healthy:
-            return jsonify(
-                {
-                    "status": "healthy",
-                    "message": status_msg,
-                    "model": llm_service.model,
-                    "api_url": llm_service.api_url,
-                    "success": True,
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "status": "healthy",
+                        "message": status_msg,
+                        "model": llm_service.model,
+                        "api_url": llm_service.api_url,
+                        "success": True,
+                    }
+                ),
+                200,
+            )
         else:
-            return jsonify(
-                {
-                    "status": "unhealthy",
-                    "message": status_msg,
-                    "model": llm_service.model,
-                    "api_url": llm_service.api_url,
-                    "success": False,
-                }
-            ), 503
+            return (
+                jsonify(
+                    {
+                        "status": "unhealthy",
+                        "message": status_msg,
+                        "model": llm_service.model,
+                        "api_url": llm_service.api_url,
+                        "success": False,
+                    }
+                ),
+                503,
+            )
 
     except Exception as e:
         logger.error(f"LLM health check failed: {str(e)}", exc_info=True)
-        return jsonify(
-            {
-                "status": "error",
-                "message": str(e),
-                "success": False,
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                    "success": False,
+                }
+            ),
+            500,
+        )
 
 
 @app.errorhandler(404)
@@ -840,6 +1133,8 @@ def ensure_initialized():
     global config, model, transcription_executor, llm_service
     if config is None or model is None:
         logger.info("Initializing model and config in worker process...")
+        # 也在 worker 进程中设置 CUDA 环境
+        setup_cuda_environment()
         config = load_config()
         initialize_model()
         initialize_llm_service()
@@ -850,9 +1145,13 @@ def ensure_initialized():
 
         logger.info("Worker process initialization completed")
 
+
 def main():
     """启动服务器"""
     global config, model, llm_service
+
+    # 设置 cuDNN 和 CUDA 库路径（修复开发服务器库加载问题）
+    setup_cuda_environment()
 
     # 加载配置
     config = load_config()
@@ -907,7 +1206,7 @@ def main():
     logger.info("=" * 60)
 
     # 启动Flask服务
-    app.run(host=host, port=port, debug=False, threaded=True)
+    app.run(host=host, port=port, debug=True, threaded=True)
 
 
 if __name__ == "__main__":
