@@ -22,7 +22,7 @@
     "retry_delay": 1,
     "temperature": 0.3,
     "max_tokens": 2000,
-    "system_prompt": "You are a helpful assistant. Your task is to polish and correct the transcribed text. Keep the original meaning and improve grammar, punctuation, and clarity. Return only the corrected text without any explanation."
+    "system_prompt": "你是一个专业的文本修正助手。你的任务是对语音识别转写的文本(主要是软件开发领域)进行纠错修正。要求：1) 必须保持原文的语言，不要翻译成其他语言；2) 改进标点符号；3) 注意相近读音而导致的语音识别转写错误，修正错别字，请勿修改语法或进行润色修改，即你只修改因为读音相近而导致的识别错误文本；4) 只返回纠错后的文本，不要添加任何解释或说明。"
   },
   "_comments": {
     "model_size": "Model size: tiny, base, small, medium, large-v1, large-v2, large-v3",

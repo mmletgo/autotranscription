@@ -330,28 +330,52 @@ class SpeechTranscriberClient:
                     result = response.json()
 
                     if result.get("success"):
-                        # Convert to segment objects similar to local model
-                        segments = []
-                        for seg_data in result.get("segments", []):
-                            seg_text = seg_data["text"].strip()
+                        # Check if LLM polished text is available
+                        llm_used = result.get("llm_used", False)
+                        final_text = result.get("text", "").strip()
 
-                            # Skip hallucination segments in final transcription
-                            if self.streaming and self._is_hallucination(seg_text):
-                                print(
-                                    f"[Filter] Skipping hallucination segment: {seg_text}"
-                                )
-                                continue
+                        # If LLM was used and we have polished text, use it
+                        # Otherwise fall back to segments
+                        if llm_used and final_text:
+                            # Create a single segment with the polished text
+                            print(f"[LLM] Using LLM-polished text")
+                            if result.get("original_text"):
+                                print(f"[LLM] Original: {result.get('original_text')}")
+                                print(f"[LLM] Polished: {final_text}")
 
                             segment = type(
                                 "Segment",
                                 (),
                                 {
-                                    "start": seg_data["start"],
-                                    "end": seg_data["end"],
-                                    "text": seg_text,
+                                    "start": 0.0,
+                                    "end": result.get("segments", [{}])[-1].get("end", 0.0) if result.get("segments") else 0.0,
+                                    "text": final_text,
                                 },
                             )()
-                            segments.append(segment)
+                            segments = [segment]
+                        else:
+                            # Fallback: use original segments
+                            segments = []
+                            for seg_data in result.get("segments", []):
+                                seg_text = seg_data["text"].strip()
+
+                                # Skip hallucination segments in final transcription
+                                if self.streaming and self._is_hallucination(seg_text):
+                                    print(
+                                        f"[Filter] Skipping hallucination segment: {seg_text}"
+                                    )
+                                    continue
+
+                                segment = type(
+                                    "Segment",
+                                    (),
+                                    {
+                                        "start": seg_data["start"],
+                                        "end": seg_data["end"],
+                                        "text": seg_text,
+                                    },
+                                )()
+                                segments.append(segment)
 
                         print(
                             f"Detected language: {result.get('language')} "

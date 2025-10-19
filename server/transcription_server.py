@@ -168,9 +168,53 @@ import socket
 from llm_service import LLMService
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+def setup_logging():
+    """Configure application logging with file and console handlers"""
+    import os
+    from logging.handlers import RotatingFileHandler
+
+    # Get log directory from environment or use default
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Application log file (separate from Gunicorn logs)
+    app_log_file = os.path.join(log_dir, "application.log")
+
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    # File handler with rotation
+    file_handler = RotatingFileHandler(
+        app_log_file,
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    # Add handlers
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    return root_logger
+
+# Setup logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -638,11 +682,16 @@ class TranscriptionService:
                 llm_error = None
 
                 if llm_service and llm_service.is_enabled():
+                    original_text = full_text.strip()
                     logger.info(
                         f"Attempting to polish text with LLM (ID: {request_id})"
                     )
+                    logger.info(
+                        f"Original text before LLM (ID: {request_id}): {original_text}"
+                    )
+
                     polished_result, success, error_msg = llm_service.polish_text(
-                        full_text.strip()
+                        original_text
                     )
 
                     if success and polished_result:
@@ -651,6 +700,21 @@ class TranscriptionService:
                         logger.info(
                             f"Text polished successfully by LLM (ID: {request_id})"
                         )
+                        logger.info(
+                            f"Polished text after LLM (ID: {request_id}): {polished_text}"
+                        )
+
+                        # Log comparison if text changed
+                        if original_text != polished_text:
+                            logger.info(
+                                f"LLM text comparison (ID: {request_id}):\n"
+                                f"  [BEFORE]: {original_text}\n"
+                                f"  [AFTER]:  {polished_text}"
+                            )
+                        else:
+                            logger.info(
+                                f"LLM did not change the text (ID: {request_id})"
+                            )
                     else:
                         # LLM failed, use original text
                         logger.warning(
