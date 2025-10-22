@@ -602,9 +602,10 @@ class SpeechTranscriberClient:
 class Recorder:
     """Audio recorder"""
 
-    def __init__(self, callback, streaming_callback=None):
+    def __init__(self, callback, streaming_callback=None, audio_device=None):
         self.callback = callback
         self.streaming_callback = streaming_callback
+        self.audio_device = audio_device  # 音频输入设备ID
         self.recording = False
         self.stream_interval = (
             3.0  # Increased from 1.0 to 3.0 seconds for better accuracy
@@ -640,12 +641,19 @@ class Recorder:
             print(f"正在使用采样率: {sample_rate} Hz")
             p = pyaudio.PyAudio()
 
-            # Get default input device info for debugging
+            # Get input device info for debugging
             try:
-                default_input = p.get_default_input_device_info()
-                print(f"使用音频设备: {default_input['name']}")
+                if self.audio_device is not None:
+                    device_info = p.get_device_info_by_index(self.audio_device)
+                    print(f"使用音频设备: {device_info['name']} (ID: {self.audio_device})")
+                else:
+                    default_input = p.get_default_input_device_info()
+                    print(f"使用默认音频设备: {default_input['name']}")
             except Exception as e:
-                print(f"Warning: Could not get default input device info: {e}")
+                print(f"Warning: Could not get input device info: {e}")
+
+            # Configure input device index
+            input_device_index = self.audio_device if self.audio_device is not None else None
 
             stream = p.open(
                 format=pyaudio.paInt16,
@@ -653,6 +661,7 @@ class Recorder:
                 rate=sample_rate,
                 frames_per_buffer=frames_per_buffer,
                 input=True,
+                input_device_index=input_device_index,
             )
             print("✓ 音频流成功打开")
 
@@ -1378,7 +1387,7 @@ class App:
         print("正在初始化音频配置...")
         try:
             input_rate, output_rate = initialize_audio_config(
-                input_device=None,  # 使用默认输入设备
+                input_device=args.audio_device,  # 使用配置文件中的音频设备
                 output_device=(
                     args.audio_device if platform.system() != "Windows" and args.audio_device is not None else None
                 ),
@@ -1475,11 +1484,11 @@ class App:
                 thread.start()
 
             self.recorder = Recorder(
-                m.finish_recording, streaming_callback=live_transcribe_callback
+                m.finish_recording, streaming_callback=live_transcribe_callback, audio_device=args.audio_device
             )
             print("✓ Live streaming transcription enabled")
         else:
-            self.recorder = Recorder(m.finish_recording)
+            self.recorder = Recorder(m.finish_recording, audio_device=args.audio_device)
 
         self.timer = None
 
